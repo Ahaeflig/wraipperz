@@ -1,0 +1,53 @@
+[project]
+name = "wraipperz"
+version = "0.1.0"
+description = "Simple wrappers for various AI APIs including LLMs, ASR, and TTS"
+readme = "README.md"
+authors = [
+    { name = "Adan Häfliger", email = "adan.haefliger@gmail.com" }
+]
+requires-python = ">=3.10"
+dependencies = [
+    "anthropic>=0.49.0",
+    "cartesia>=1.4.0",
+    "deepgram-sdk>=3.10.1",
+    "google-genai>=1.5.0",
+    "google-generativeai>=0.8.4",
+    "openai>=1.66.3",
+    "pillow>=11.1.0",
+    "python-dotenv>=1.0.1",
+    "soundfile>=0.13.1",
+    "tenacity>=9.0.0",
+    "websocket-client>=1.8.0",
+    "websockets>=14.2",
+]
+license = {text = "MIT"}
+keywords = ["ai", "llm", "wrapper", "openai", "anthropic", "google", "asr", "tts"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Software Development :: Libraries :: Python Modules",
+]
+
+[project.urls]
+"Homepage" = "https://github.com/Ahaeflig/wraipperz"
+"Bug Tracker" = "https://github.com/Ahaeflig/wraipperz/issues"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/wraipperz"]
+
+[dependency-groups]
+dev = [
+    "build>=1.2.2.post1",
+    "pre-commit>=4.1.0",
+    "pytest>=8.3.5",
+    "ruff>=0.11.0",
+    "twine>=6.1.0",
+]
