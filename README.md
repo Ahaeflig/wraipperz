@@ -18,6 +18,8 @@ uv add wraipperz
 
 ## Quick Start
 
+### LLM
+
 ```python
 import os
 from wraipperz import call_ai, MessageBuilder
@@ -30,6 +32,29 @@ response, cost = call_ai(
     model="openai/gpt-4o",
     messages=messages
 )
+```
+
+### TTS
+
+```python
+from wraipperz.api.tts import create_tts_manager
+
+tts_manager = create_tts_manager()
+
+# Generate speech using OpenAI Realtime TTS
+response = tts_manager.generate_speech(
+    "openai_realtime",
+    text="This is a demonstration of my voice capabilities!",
+    output_path="realtime_output.mp3",
+    voice="ballad",
+    context="Speak in a extremelly calm, soft, and relaxed voice.",
+    return_alignment=True,
+    speed=1.1,
+)
+
+# Convert speech using ElevenLabs
+# TODO add example
+
 ```
 
 ## Environment Variables
