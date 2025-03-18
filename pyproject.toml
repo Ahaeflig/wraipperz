@@ -1,11 +1,9 @@
 [project]
 name = "wraipperz"
-version = "0.1.1"
+version = "0.1.2"
 description = "Simple wrappers for various AI APIs including LLMs, ASR, and TTS"
 readme = "README.md"
-authors = [
-    { name = "Adan Häfliger", email = "adan.haefliger@gmail.com" }
-]
+authors = [{ name = "Adan Häfliger", email = "adan.haefliger@gmail.com" }]
 requires-python = ">=3.10"
 dependencies = [
     "anthropic>=0.49.0",
@@ -21,8 +19,17 @@ dependencies = [
     "websocket-client>=1.8.0",
     "websockets>=14.2",
 ]
-license = {text = "MIT"}
-keywords = ["ai", "llm", "wrapper", "openai", "anthropic", "google", "asr", "tts"]
+license = { text = "MIT" }
+keywords = [
+    "ai",
+    "llm",
+    "wrapper",
+    "openai",
+    "anthropic",
+    "google",
+    "asr",
+    "tts",
+]
 classifiers = [
     "Development Status :: 4 - Beta",
     "Intended Audience :: Developers",
