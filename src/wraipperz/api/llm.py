@@ -6,8 +6,8 @@ import os
 
 # from tokencost import calculate_prompt_cost, calculate_completion_cost
 import time
-from functools import partial
 from pathlib import Path
+from typing import List
 
 import anthropic
 import requests
@@ -32,6 +32,7 @@ from tenacity import (
     stop_after_attempt,
     wait_exponential,
 )
+from .messages import Message
 
 load_dotenv(override=True)
 
@@ -908,12 +909,31 @@ if os.getenv("LMSTUDIO_IP") and os.getenv("LMSTUDIO_PORT"):
     ai_manager.set_fallback_provider(ai_manager.providers["LMStudioProvider"])
 
 # Create partial functions for easy calling with retries
+"""
 call_ai = partial(
     call_ai_with_retry, ai_manager=ai_manager, temperature=0.1, max_tokens=4096
 )
 call_ai_async = partial(
     call_ai_async_with_retry, ai_manager=ai_manager, temperature=0.1, max_tokens=4096
 )
+"""
+
+
+def call_ai(
+    model: str, messages: List[Message], temperature=0.1, max_tokens=4096, **kwargs
+):
+    return call_ai_with_retry(
+        ai_manager, messages, temperature, max_tokens, model, **kwargs
+    )
+
+
+def call_ai_async(
+    model: str, messages: List[Message], temperature=0.1, max_tokens=4096, **kwargs
+):
+    return call_ai_async_with_retry(
+        ai_manager, messages, temperature, max_tokens, model, **kwargs
+    )
+
 
 """
 # Usage example
