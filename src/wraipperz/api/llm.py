@@ -898,13 +898,14 @@ if os.getenv("GOOGLE_API_KEY"):
 if os.getenv("DEEPSEEK_API_KEY"):
     ai_manager.add_provider(DeepSeekProvider())
 
-ai_manager.add_provider(
-    LMStudioProvider(
-        ip_address=os.getenv("LMSTUDIO_IP", "192.168.11.34"),
-        port=int(os.getenv("LMSTUDIO_PORT", "1234")),
+if os.getenv("LMSTUDIO_IP") and os.getenv("LMSTUDIO_PORT"):
+    ai_manager.add_provider(
+        LMStudioProvider(
+            ip_address=os.getenv("LMSTUDIO_IP", "192.168.11.34"),
+            port=int(os.getenv("LMSTUDIO_PORT", "1234")),
+        )
     )
-)
-ai_manager.set_fallback_provider(ai_manager.providers["LMStudioProvider"])
+    ai_manager.set_fallback_provider(ai_manager.providers["LMStudioProvider"])
 
 # Create partial functions for easy calling with retries
 call_ai = partial(
