@@ -567,18 +567,189 @@ class OpenAIRealtimeTTSProvider(TTSProvider):
 class OpenAITTSProvider(TTSProvider):
     def __init__(self, api_key: str = None):
         self.client = OpenAI(api_key=api_key or os.getenv("OPENAI_API_KEY"))
+        self.available_voices = {
+            "alloy": {
+                "name": "alloy",
+                "description": "A female voice with a neutral, balanced tone, suitable for general-purpose applications.",
+                "labels": {
+                    "accent": "American",
+                    "description": "balanced and neutral",
+                    "age": "young adult",
+                    "gender": "female",
+                    "use_case": "general purpose",
+                },
+            },
+            "echo": {
+                "name": "echo",
+                "description": "A soft male voice with an androgynous quality, ideal for narration.",
+                "labels": {
+                    "accent": "American",
+                    "description": "soft and measured",
+                    "age": "adult",
+                    "gender": "male",
+                    "use_case": "narration",
+                },
+            },
+            "fable": {
+                "name": "fable",
+                "description": "A voice with a magical and dreamy tone, suitable for storytelling.",
+                "labels": {
+                    "accent": "American",
+                    "description": "magical and dreamy",
+                    "age": "indeterminate",
+                    "gender": "neutral",
+                    "use_case": "storytelling",
+                },
+            },
+            "onyx": {
+                "name": "onyx",
+                "description": "A deep, rich voice with a commanding presence.",
+                "labels": {
+                    "accent": "American",
+                    "description": "deep and commanding",
+                    "age": "adult",
+                    "gender": "male",
+                    "use_case": "authoritative narration",
+                },
+            },
+            "nova": {
+                "name": "nova",
+                "description": "A bright, energetic voice with a youthful quality.",
+                "labels": {
+                    "accent": "American",
+                    "description": "bright and energetic",
+                    "age": "young adult",
+                    "gender": "female",
+                    "use_case": "energetic content",
+                },
+            },
+            "shimmer": {
+                "name": "shimmer",
+                "description": "A female voice with a warm, welcoming tone perfect for casual content.",
+                "labels": {
+                    "accent": "American",
+                    "description": "warm and welcoming",
+                    "age": "young adult",
+                    "gender": "female",
+                    "use_case": "casual content",
+                },
+            },
+            "ash": {
+                "name": "ash",
+                "description": "A masculine voice with a clear, professional tone suitable for business content.",
+                "labels": {
+                    "accent": "American",
+                    "description": "clear and professional",
+                    "age": "adult",
+                    "gender": "male",
+                    "use_case": "business",
+                },
+            },
+            "coral": {
+                "name": "coral",
+                "description": "A female voice with an energetic, professional tone great for presentations.",
+                "labels": {
+                    "accent": "American",
+                    "description": "energetic and professional",
+                    "age": "adult",
+                    "gender": "female",
+                    "use_case": "presentations",
+                },
+            },
+            "sage": {
+                "name": "sage",
+                "description": "A female voice with a thoughtful, measured tone perfect for explanations.",
+                "labels": {
+                    "accent": "American",
+                    "description": "thoughtful and measured",
+                    "age": "adult",
+                    "gender": "female",
+                    "use_case": "explanations",
+                },
+            },
+            "ballad": {
+                "name": "ballad",
+                "description": "A male voice with a polished, commercial tone suited for marketing and announcements.",
+                "labels": {
+                    "accent": "American",
+                    "description": "polished and commercial",
+                    "age": "adult",
+                    "gender": "male",
+                    "use_case": "marketing",
+                },
+            },
+        }
+
+    def list_voices(self) -> list[dict]:
+        """Return list of available voices with their details"""
+        return [
+            {"name": k, "voice_id": k, **v} for k, v in self.available_voices.items()
+        ]
 
     def generate_speech(
         self,
         text: str,
         output_path: str,
         voice: str = "alloy",
-        model: str = "tts-1",
+        model: str = "gpt-4o-mini-tts",
+        instructions: str = None,
+        response_format: str = "mp3",
+        speed: float = 1.0,
         **kwargs,
     ) -> dict | None:
-        response = self.client.audio.speech.create(model=model, voice=voice, input=text)
-        response.stream_to_file(output_path)
-        return {"status": "success"}  # Return minimal dict for consistency
+        """
+        Generate speech using OpenAI's TTS API
+
+        Args:
+            text: The text to convert to speech
+            output_path: Where to save the resulting audio file
+            voice: One of the available voices (alloy, echo, fable, onyx, nova, shimmer, ash, coral, sage, ballad)
+            model: The TTS model to use (gpt-4o-mini-tts, tts-1, or tts-1-hd)
+            instructions: Optional instructions to guide the voice style (e.g., "Speak in a cheerful tone")
+            response_format: Output format (mp3, opus, aac, flac, wav, pcm)
+            speed: Speed of speech (0.5 to 2.0)
+            **kwargs: Additional parameters for future API options
+
+        Returns:
+            Dictionary with status and any additional information
+        """
+        # Validate parameters
+        if speed < 0.5 or speed > 2.0:
+            raise ValueError("Speed must be between 0.5 and 2.0")
+
+        # Create request parameters
+        request_params = {
+            "model": model,
+            "voice": voice,
+            "input": text,
+            "speed": speed,
+        }
+
+        # Add optional parameters if provided
+        if instructions:
+            request_params["instructions"] = instructions
+
+        if response_format:
+            request_params["response_format"] = response_format
+
+        # Generate audio
+        try:
+            response = self.client.audio.speech.create(**request_params)
+            response.stream_to_file(output_path)
+
+            return {
+                "status": "success",
+                "model": model,
+                "voice": voice,
+                "output_format": response_format,
+            }
+
+        except Exception as e:
+            # Handle rate limit errors specifically
+            if "rate limit" in str(e).lower():
+                raise TTSRateLimitError(f"OpenAI API rate limit exceeded: {str(e)}")
+            # Handle other errors
+            raise TTSError(f"OpenAI TTS generation failed: {str(e)}")
 
 
 class ElevenLabsTTSProvider(TTSProvider):
