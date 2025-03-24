@@ -23,7 +23,7 @@ from websockets.exceptions import WebSocketException
 import subprocess
 import requests
 import soundfile as sf
-from cartesia import Cartesia  # Add this import at the top with other imports
+from cartesia import Cartesia
 
 from .asr import create_asr_manager
 

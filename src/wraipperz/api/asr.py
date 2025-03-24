@@ -84,60 +84,138 @@ class ASRProvider(abc.ABC):
 
 
 class OpenAIASRProvider(ASRProvider):
-    """OpenAI Whisper ASR provider"""
+    """OpenAI ASR provider using Whisper and GPT-4o based transcription models"""
 
     def __init__(self, api_key: str = None):
         self.client = OpenAI(api_key=api_key or os.getenv("OPENAI_API_KEY"))
 
     def transcribe(
-        self, audio_path: str | Path, language: Optional[str] = None, **kwargs
+        self,
+        audio_path: str | Path,
+        language: Optional[str] = None,
+        model: str = "whisper-1",
+        response_format: str = "verbose_json",
+        prompt: Optional[str] = None,
+        timestamp_granularities: Optional[List[str]] = None,
+        **kwargs,
     ) -> ASRResult:
         """
-        Transcribe audio using OpenAI's Whisper model
+        Transcribe audio using OpenAI's Whisper or GPT-4o based transcription models
 
         Args:
             audio_path: Path to audio file
             language: Optional ISO-639-1 language code
+            model: Model to use ("whisper-1", "gpt-4o-mini-transcribe", or "gpt-4o-transcribe")
+            response_format: Format of the response ("json", "text", "srt", "verbose_json", "vtt")
+                             Note: gpt-4o models only support "json" or "text"
+            prompt: Optional text to guide the model's style or help it pick up on certain words
+                    Note: prompt is not supported by gpt-4o models
+            timestamp_granularities: Optional list of timestamp granularity options (["word", "segment"])
+                                     Note: requires "verbose_json" and is only supported by whisper-1
             **kwargs: Additional arguments passed to OpenAI API
 
         Returns:
             ASRResult object containing transcription and timing information
         """
+        # Validate format compatibility with model
+        if model in ["gpt-4o-mini-transcribe", "gpt-4o-transcribe"]:
+            if response_format not in ["json", "text"]:
+                response_format = (
+                    "json"  # Default to json for gpt-4o models if unsupported format
+                )
+                print(
+                    f"Warning: {model} only supports 'json' or 'text' response formats. Using 'json'."
+                )
+
+            if prompt:
+                print(
+                    f"Warning: {model} does not support the 'prompt' parameter. It will be ignored."
+                )
+                prompt = None
+
+            if timestamp_granularities:
+                print(
+                    f"Warning: {model} does not support the 'timestamp_granularities' parameter. It will be ignored."
+                )
+                timestamp_granularities = None
+
+        # For word-level timestamps, we need verbose_json
+        if timestamp_granularities and "word" in timestamp_granularities:
+            if response_format != "verbose_json":
+                response_format = "verbose_json"
+                print(
+                    "Setting response_format to 'verbose_json' to support word-level timestamps"
+                )
+
         with open(audio_path, "rb") as audio_file:
-            # Use requests directly to get raw JSON response with word timestamps
-            import requests
-
-            headers = {"Authorization": f"Bearer {self.client.api_key}"}
-
-            files = {
-                "file": ("audio.wav", audio_file, "audio/wav"),
-                "model": (None, "whisper-1"),
-                "response_format": (None, "verbose_json"),
+            # Prepare request parameters
+            request_params = {
+                "file": audio_file,
+                "model": model,
+                "response_format": response_format,
             }
 
+            # Add optional parameters if provided
             if language:
-                files["language"] = (None, language)
+                request_params["language"] = language
 
-            # Add timestamp_granularities parameter
-            files["timestamp_granularities[]"] = (None, "word")
+            if prompt and model == "whisper-1":
+                request_params["prompt"] = prompt
 
-            response = requests.post(
-                "https://api.openai.com/v1/audio/transcriptions",
-                headers=headers,
-                files=files,
-            )
+            if (
+                timestamp_granularities
+                and model == "whisper-1"
+                and response_format == "verbose_json"
+            ):
+                request_params["timestamp_granularities"] = timestamp_granularities
 
-            if response.status_code != 200:
-                raise ASRError(f"OpenAI API error: {response.text}")
+            # Add any additional parameters from kwargs
+            for key, value in kwargs.items():
+                request_params[key] = value
 
-            data = response.json()
+            try:
+                # Make API request
+                response = self.client.audio.transcriptions.create(**request_params)
 
-            return ASRResult(
-                text=data["text"],
-                words=data["words"],
-                duration=data["duration"],
-                language=data["language"],
-            )
+                # Handle different response formats
+                if response_format == "verbose_json":
+                    # For verbose_json format, response is an object with text, words, etc.
+                    return ASRResult(
+                        text=response.text,
+                        words=[
+                            {"word": w.word, "start": w.start, "end": w.end}
+                            for w in response.words
+                        ],
+                        duration=response.duration,
+                        language=response.language,
+                    )
+                elif response_format == "json":
+                    # For json format, response just has text
+                    return ASRResult(
+                        text=response.text,
+                        words=[],  # No word-level timing info
+                        duration=0.0,  # No duration info
+                        language=language or "en",
+                    )
+                elif response_format == "text":
+                    # For text format, response is just a string
+                    return ASRResult(
+                        text=response,
+                        words=[],  # No word-level timing info
+                        duration=0.0,  # No duration info
+                        language=language or "en",
+                    )
+                else:
+                    # For other formats, create a basic result
+                    return ASRResult(
+                        text=str(response),
+                        words=[],  # No word-level timing info
+                        duration=0.0,  # No duration info
+                        language=language or "en",
+                    )
+
+            except Exception as e:
+                raise ASRError(f"OpenAI API error: {str(e)}")
 
 
 class DeepgramASRProvider(ASRProvider):
@@ -239,6 +317,11 @@ def create_asr_manager() -> ASRManager:
 
     if os.getenv("DG_API_KEY"):
         manager.add_provider("deepgram", DeepgramASRProvider())
+
+    if len(manager.providers) == 0:
+        raise ValueError(
+            "No ASR providers found, please add OPENAI_API_KEY or DG_API_KEY to your environment variables"
+        )
 
     return manager
 
