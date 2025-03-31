@@ -34,6 +34,36 @@ response, cost = call_ai(
 )
 ```
 
+Parsing LLM output to pydantic object.
+
+```python
+from pydantic import BaseModel, Field
+from wraipperz import pydantic_to_yaml_example, find_yaml, MessageBuilder, call_ai
+import yaml
+
+
+class User(BaseModel):
+    name: str = Field(json_schema_extra={"example": "Bob", "comment": "The name of the character."})
+    age: int = Field(json_schema_extra={"example": 12, "comment": "The age of the character."})
+
+
+template = pydantic_to_yaml_example(User)
+prompt = f"""Extract the user's name and age from the unstructured text provided below and output your answer following the provided example.
+Text: "John is a well respected 31 years old pirate who really likes mooncakes."
+Exampe output:
+\`\`\`yaml
+{template}
+\`\`\`
+"""
+messages = MessageBuilder().add_system(prompt).build()
+response, cost = call_ai(model="openai/gpt-4o-mini", messages=messages)
+
+yaml_content = find_yaml(response)
+user = User(**yaml.safe_load(yaml_content))
+print(user)  # prints name='John' age=31
+```
+
+
 ### TTS
 
 ```python
