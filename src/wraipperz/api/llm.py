@@ -5,7 +5,6 @@ import mimetypes
 import os
 
 # from tokencost import calculate_prompt_cost, calculate_completion_cost
-import time
 from pathlib import Path
 from typing import List
 
@@ -32,6 +31,7 @@ from tenacity import (
     stop_after_attempt,
     wait_exponential,
 )
+
 from .messages import Message
 
 load_dotenv(override=True)
@@ -44,6 +44,14 @@ class AIProvider(abc.ABC):
 
     @abc.abstractmethod
     async def call_ai_async(self, messages, temperature, max_tokens, model, **kwargs):
+        pass
+
+    @abc.abstractmethod
+    def generate(self, messages, temperature, max_tokens, model, **kwargs):
+        pass
+
+    @abc.abstractmethod
+    async def generate_async(self, messages, temperature, max_tokens, model, **kwargs):
         pass
 
 
@@ -65,16 +73,28 @@ class LMStudioProvider(AIProvider):
             if model:
                 data["model"] = model
 
-            response = requests.post(f"{self.base_url}/chat/completions", headers=headers, json=data)
+            response = requests.post(
+                f"{self.base_url}/chat/completions", headers=headers, json=data
+            )
             response.raise_for_status()
             return response.json()["choices"][0]["message"]["content"]
         except Exception as e:
             raise e
 
-    async def call_ai_async(self, messages, temperature, max_tokens, model=None, **kwargs):
+    async def call_ai_async(
+        self, messages, temperature, max_tokens, model=None, **kwargs
+    ):
         # For simplicity, we'll use the synchronous version in an async context
         # In a real-world scenario, you might want to use an async HTTP client
         return self.call_ai(messages, temperature, max_tokens, model, **kwargs)
+
+    def generate(self, messages, temperature, max_tokens, model=None, **kwargs):
+        raise NotImplementedError("This provider does not support image generation")
+
+    async def generate_async(
+        self, messages, temperature, max_tokens, model=None, **kwargs
+    ):
+        raise NotImplementedError("This provider does not support image generation")
 
 
 class OpenAIProvider(AIProvider):
@@ -121,7 +141,9 @@ class OpenAIProvider(AIProvider):
         self.sync_client = OpenAI(api_key=api_key or os.getenv("OPENAI_API_KEY"))
         self.async_client = AsyncOpenAI(api_key=api_key or os.getenv("OPENAI_API_KEY"))
 
-    def call_ai(self, messages, temperature, max_tokens, model="openai/gpt-4o", **kwargs):
+    def call_ai(
+        self, messages, temperature, max_tokens, model="openai/gpt-4o", **kwargs
+    ):
         try:
             prepared_messages = self._prepare_messages(messages)  # Add this line
             response = self.sync_client.chat.completions.create(
@@ -135,7 +157,9 @@ class OpenAIProvider(AIProvider):
         except Exception as e:
             raise e
 
-    async def call_ai_async(self, messages, temperature, max_tokens, model="openai/gpt-4o", **kwargs):
+    async def call_ai_async(
+        self, messages, temperature, max_tokens, model="openai/gpt-4o", **kwargs
+    ):
         try:
             prepared_messages = self._prepare_messages(messages)
             response = await self.async_client.chat.completions.create(
@@ -148,6 +172,14 @@ class OpenAIProvider(AIProvider):
             return response.choices[0].message.content
         except Exception as e:
             raise e
+
+    def generate(self, messages, temperature, max_tokens, model=None, **kwargs):
+        raise NotImplementedError("This provider does not support image generation")
+
+    async def generate_async(
+        self, messages, temperature, max_tokens, model=None, **kwargs
+    ):
+        raise NotImplementedError("This provider does not support image generation")
 
     def _process_media(self, media_path):
         if isinstance(media_path, (str, Path)):
@@ -199,7 +231,9 @@ class OpenAIProvider(AIProvider):
                         prepared_content.append(
                             {
                                 "type": "image_url",
-                                "image_url": {"url": f"data:{mime_type};base64,{image_data}"},
+                                "image_url": {
+                                    "url": f"data:{mime_type};base64,{image_data}"
+                                },
                             }
                         )
                     elif isinstance(item, dict) and item.get("type") in [
@@ -211,7 +245,9 @@ class OpenAIProvider(AIProvider):
                         pass
                     else:
                         prepared_content.append(item)
-                prepared_messages.append({"role": message["role"], "content": prepared_content})
+                prepared_messages.append(
+                    {"role": message["role"], "content": prepared_content}
+                )
         return prepared_messages
 
 
@@ -229,10 +265,16 @@ class AnthropicProvider(AIProvider):
     ]
 
     def __init__(self, api_key=None):
-        self.sync_client = anthropic.Anthropic(api_key=api_key or os.getenv("ANTHROPIC_API_KEY"))
-        self.async_client = anthropic.AsyncAnthropic(api_key=api_key or os.getenv("ANTHROPIC_API_KEY"))
+        self.sync_client = anthropic.Anthropic(
+            api_key=api_key or os.getenv("ANTHROPIC_API_KEY")
+        )
+        self.async_client = anthropic.AsyncAnthropic(
+            api_key=api_key or os.getenv("ANTHROPIC_API_KEY")
+        )
 
-        self.supported_models = [f"anthropic/{model.id}" for model in self.sync_client.models.list(limit=30)]
+        self.supported_models = [
+            f"anthropic/{model.id}" for model in self.sync_client.models.list(limit=30)
+        ]
 
     def _prepare_messages(self, messages):
         """Prepare messages for Claude API, handling both text, images, and caching."""
@@ -248,13 +290,17 @@ class AnthropicProvider(AIProvider):
                 system_content.append(system_msg)
             else:
                 if isinstance(message["content"], str):
-                    user_messages.append({"role": message["role"], "content": message["content"]})
+                    user_messages.append(
+                        {"role": message["role"], "content": message["content"]}
+                    )
                 elif isinstance(message["content"], list):
                     prepared_content = []
                     for item in message["content"]:
                         if isinstance(item, dict):
                             if item.get("type") == "text":
-                                prepared_content.append({"type": "text", "text": item["text"]})
+                                prepared_content.append(
+                                    {"type": "text", "text": item["text"]}
+                                )
                             elif item.get("type") == "image_url":
                                 # Handle both local files and URLs
                                 image_url = item["image_url"]["url"]
@@ -273,12 +319,16 @@ class AnthropicProvider(AIProvider):
                                             "type": "image",
                                             "source": {
                                                 "type": "base64",
-                                                "media_type": self._get_media_type(image_url),
+                                                "media_type": self._get_media_type(
+                                                    image_url
+                                                ),
                                                 "data": image_data,
                                             },
                                         }
                                     )
-                    user_messages.append({"role": message["role"], "content": prepared_content})
+                    user_messages.append(
+                        {"role": message["role"], "content": prepared_content}
+                    )
 
         return system_content, user_messages
 
@@ -313,6 +363,14 @@ class AnthropicProvider(AIProvider):
         mime_type, _ = mimetypes.guess_type(file_path)
         return mime_type or "image/jpeg"
 
+    def generate(self, messages, temperature, max_tokens, model=None, **kwargs):
+        raise NotImplementedError("This provider does not support image generation")
+
+    async def generate_async(
+        self, messages, temperature, max_tokens, model=None, **kwargs
+    ):
+        raise NotImplementedError("This provider does not support image generation")
+
     def call_ai(
         self,
         messages,
@@ -331,7 +389,9 @@ class AnthropicProvider(AIProvider):
             if thinking is True:
                 thinking = {
                     "type": "enabled",
-                    "budget_tokens": min(max_tokens // 2, 1024),  # Use half of max_tokens or 1024, whichever is smaller
+                    "budget_tokens": min(
+                        max_tokens // 2, 1024
+                    ),  # Use half of max_tokens or 1024, whichever is smaller
                 }
 
             # Create API call parameters
@@ -340,7 +400,9 @@ class AnthropicProvider(AIProvider):
                 "max_tokens": max_tokens,
                 "temperature": temperature,
                 "system": system_content,
-                "messages": user_messages if user_messages else [{"role": "user", "content": "Follow the system prompt."}],
+                "messages": user_messages
+                if user_messages
+                else [{"role": "user", "content": "Follow the system prompt."}],
                 **kwargs,
             }
 
@@ -353,11 +415,19 @@ class AnthropicProvider(AIProvider):
             # Handle thinking content if present
             if hasattr(response, "content") and len(response.content) > 1:
                 # Check if any content block is of type "thinking"
-                thinking_blocks = [block for block in response.content if getattr(block, "type", None) == "thinking"]
+                thinking_blocks = [
+                    block
+                    for block in response.content
+                    if getattr(block, "type", None) == "thinking"
+                ]
                 if thinking_blocks:
                     # You can log or process thinking blocks separately if needed
                     # For now, we'll just return the final text response
-                    text_blocks = [block for block in response.content if getattr(block, "type", None) == "text"]
+                    text_blocks = [
+                        block
+                        for block in response.content
+                        if getattr(block, "type", None) == "text"
+                    ]
                     if text_blocks:
                         return text_blocks[0].text
 
@@ -384,7 +454,9 @@ class AnthropicProvider(AIProvider):
             if thinking is True:
                 thinking = {
                     "type": "enabled",
-                    "budget_tokens": min(max_tokens // 2, 1024),  # Use half of max_tokens or 1024, whichever is smaller
+                    "budget_tokens": min(
+                        max_tokens // 2, 1024
+                    ),  # Use half of max_tokens or 1024, whichever is smaller
                 }
 
             # Create API call parameters
@@ -393,7 +465,9 @@ class AnthropicProvider(AIProvider):
                 "max_tokens": max_tokens,
                 "temperature": temperature,
                 "system": system_content,
-                "messages": user_messages if user_messages else [{"role": "user", "content": "Follow the system prompt."}],
+                "messages": user_messages
+                if user_messages
+                else [{"role": "user", "content": "Follow the system prompt."}],
                 **kwargs,
             }
 
@@ -406,11 +480,19 @@ class AnthropicProvider(AIProvider):
             # Handle thinking content if present
             if hasattr(response, "content") and len(response.content) > 1:
                 # Check if any content block is of type "thinking"
-                thinking_blocks = [block for block in response.content if getattr(block, "type", None) == "thinking"]
+                thinking_blocks = [
+                    block
+                    for block in response.content
+                    if getattr(block, "type", None) == "thinking"
+                ]
                 if thinking_blocks:
                     # You can log or process thinking blocks separately if needed
                     # For now, we'll just return the final text response
-                    text_blocks = [block for block in response.content if getattr(block, "type", None) == "text"]
+                    text_blocks = [
+                        block
+                        for block in response.content
+                        if getattr(block, "type", None) == "text"
+                    ]
                     if text_blocks:
                         return text_blocks[0].text
 
@@ -460,9 +542,22 @@ class GeminiProvider(AIProvider):
         # genai.configure(api_key=api_key or os.getenv("GOOGLE_API_KEY"))
         self.client = genai.Client(api_key=api_key or os.getenv("GOOGLE_API_KEY"))
         try:
-            self.supported_models = [
-                f"genai/{m.name}," for m in self.client.models.list() if "generateContent" in m.supported_actions
-            ]
+            # Get models from API
+            api_models = []
+            for m in self.client.models.list():
+                if (
+                    hasattr(m, "supported_actions")
+                    and "generateContent" in m.supported_actions
+                ):
+                    # Create both gemini/ and genai/ prefixed versions
+                    genai_name = f"genai/{m.name}"
+                    gemini_name = f"gemini/{m.name}"
+                    api_models.append(genai_name)
+                    api_models.append(gemini_name)
+
+            # Add the API models to our supported models
+            if api_models:
+                self.supported_models.extend(api_models)
         except Exception as e:
             print(e, f"Error initializing GeminiProvider: {e}")
 
@@ -476,7 +571,9 @@ class GeminiProvider(AIProvider):
     ):
         try:
             # Extract system message if present
-            system_instruction = next((msg["content"] for msg in messages if msg["role"] == "system"), None)
+            system_instruction = next(
+                (msg["content"] for msg in messages if msg["role"] == "system"), None
+            )
 
             # Get the user messages
             user_messages = [msg for msg in messages if msg["role"] != "system"]
@@ -484,7 +581,9 @@ class GeminiProvider(AIProvider):
             # Convert messages to content
             if not user_messages:
                 contents = "Follow the system instructions."
-            elif len(user_messages) == 1 and isinstance(user_messages[0]["content"], str):
+            elif len(user_messages) == 1 and isinstance(
+                user_messages[0]["content"], str
+            ):
                 contents = user_messages[0]["content"]
             else:
                 # Handle multiple messages or messages with images
@@ -502,7 +601,11 @@ class GeminiProvider(AIProvider):
                                 image_path = item["image_url"]["url"]
                                 with open(image_path, "rb") as f:
                                     image_data = f.read()
-                                image_parts.append(types.Part.from_bytes(data=image_data, mime_type="image/jpeg"))
+                                image_parts.append(
+                                    types.Part.from_bytes(
+                                        data=image_data, mime_type="image/jpeg"
+                                    )
+                                )
 
                         # Always ensure there's text content
                         if not text_parts:
@@ -521,8 +624,12 @@ class GeminiProvider(AIProvider):
                     max_output_tokens=max_tokens,
                     system_instruction=system_instruction,  # Pass system instruction directly in config
                     safety_settings=[
-                        types.SafetySetting(category="HARM_CATEGORY_HATE_SPEECH", threshold="BLOCK_NONE"),
-                        types.SafetySetting(category="HARM_CATEGORY_HARASSMENT", threshold="BLOCK_NONE"),
+                        types.SafetySetting(
+                            category="HARM_CATEGORY_HATE_SPEECH", threshold="BLOCK_NONE"
+                        ),
+                        types.SafetySetting(
+                            category="HARM_CATEGORY_HARASSMENT", threshold="BLOCK_NONE"
+                        ),
                         types.SafetySetting(
                             category="HARM_CATEGORY_SEXUALLY_EXPLICIT",
                             threshold="BLOCK_NONE",
@@ -534,7 +641,6 @@ class GeminiProvider(AIProvider):
                     ],
                 ),
             )
-            time.sleep(1.2)  # FREE API TIER TODO
             return response.text
         except Exception as e:
             raise e
@@ -549,14 +655,18 @@ class GeminiProvider(AIProvider):
     ):
         try:
             # Extract system message if present
-            system_instruction = next((msg["content"] for msg in messages if msg["role"] == "system"), None)
+            system_instruction = next(
+                (msg["content"] for msg in messages if msg["role"] == "system"), None
+            )
 
             # Get the user messages
             user_messages = [msg for msg in messages if msg["role"] != "system"]
 
             if not user_messages:
                 contents = "Follow the system instructions."
-            elif len(user_messages) == 1 and isinstance(user_messages[0]["content"], str):
+            elif len(user_messages) == 1 and isinstance(
+                user_messages[0]["content"], str
+            ):
                 contents = user_messages[0]["content"]
             else:
                 # Handle multiple messages or messages with images
@@ -574,7 +684,11 @@ class GeminiProvider(AIProvider):
                                 image_path = item["image_url"]["url"]
                                 with open(image_path, "rb") as f:
                                     image_data = f.read()
-                                image_parts.append(types.Part.from_bytes(data=image_data, mime_type="image/jpeg"))
+                                image_parts.append(
+                                    types.Part.from_bytes(
+                                        data=image_data, mime_type="image/jpeg"
+                                    )
+                                )
 
                         # Always ensure there's text content
                         if not text_parts:
@@ -593,8 +707,12 @@ class GeminiProvider(AIProvider):
                     max_output_tokens=max_tokens,
                     system_instruction=system_instruction,  # Pass system instruction directly in config
                     safety_settings=[
-                        types.SafetySetting(category="HARM_CATEGORY_HATE_SPEECH", threshold="BLOCK_NONE"),
-                        types.SafetySetting(category="HARM_CATEGORY_HARASSMENT", threshold="BLOCK_NONE"),
+                        types.SafetySetting(
+                            category="HARM_CATEGORY_HATE_SPEECH", threshold="BLOCK_NONE"
+                        ),
+                        types.SafetySetting(
+                            category="HARM_CATEGORY_HARASSMENT", threshold="BLOCK_NONE"
+                        ),
                         types.SafetySetting(
                             category="HARM_CATEGORY_SEXUALLY_EXPLICIT",
                             threshold="BLOCK_NONE",
@@ -606,7 +724,6 @@ class GeminiProvider(AIProvider):
                     ],
                 ),
             )
-            time.sleep(1.2)  # FREE API TIER TODO
             return response.text
         except Exception as e:
             raise e
@@ -616,13 +733,129 @@ class GeminiProvider(AIProvider):
 
         # Wait until the uploaded video is available
         while video_file.state.name == "PROCESSING":
-            time.sleep(5)
             video_file = genai.get_file(video_file.name)
 
         if video_file.state.name == "FAILED":
             raise ValueError(video_file.state.name)
 
         return video_file
+
+    def generate(
+        self,
+        messages,
+        temperature,
+        max_tokens,
+        model="gemini/gemini-2.0-flash-exp-image-generation",
+        **kwargs,
+    ):
+        try:
+            # Extract system message if present
+            system_instruction = next(
+                (msg["content"] for msg in messages if msg["role"] == "system"), None
+            )
+
+            # Get the user messages
+            user_messages = [msg for msg in messages if msg["role"] != "system"]
+
+            # Convert messages to content
+            if not user_messages:
+                contents = "Follow the system instructions."
+            elif len(user_messages) == 1 and isinstance(
+                user_messages[0]["content"], str
+            ):
+                contents = [user_messages[0]["content"]]
+            else:
+                # Handle multiple messages or messages with images
+                contents = []
+                for message in user_messages:
+                    if isinstance(message["content"], str):
+                        contents.append(message["content"])
+                    elif isinstance(message["content"], list):
+                        text_parts = []
+                        image_parts = []
+                        for item in message["content"]:
+                            if item.get("type") == "text":
+                                text_parts.append(item["text"])
+                            elif item.get("type") == "image_url":
+                                image_path = item["image_url"]["url"]
+                                # Handle PIL Image
+                                if isinstance(image_path, Image.Image):
+                                    image_parts.append(image_path)
+                                # Handle file path
+                                else:
+                                    with open(image_path, "rb") as f:
+                                        image_data = f.read()
+                                    image_parts.append(
+                                        Image.open(io.BytesIO(image_data))
+                                    )
+
+                        # Always ensure there's text content
+                        if not text_parts:
+                            text_parts.append("Consider this image in your response.")
+
+                        # Add text as one part
+                        contents.append(" ".join(text_parts))
+                        # Add image parts
+                        contents.extend(image_parts)
+
+            # Configure response modalities to include both text and image
+            config = types.GenerateContentConfig(
+                temperature=temperature,
+                max_output_tokens=max_tokens,
+                system_instruction=system_instruction,
+                response_modalities=["Text", "Image"],
+                safety_settings=[
+                    types.SafetySetting(
+                        category="HARM_CATEGORY_HATE_SPEECH", threshold="BLOCK_NONE"
+                    ),
+                    types.SafetySetting(
+                        category="HARM_CATEGORY_HARASSMENT", threshold="BLOCK_NONE"
+                    ),
+                    types.SafetySetting(
+                        category="HARM_CATEGORY_SEXUALLY_EXPLICIT",
+                        threshold="BLOCK_NONE",
+                    ),
+                    types.SafetySetting(
+                        category="HARM_CATEGORY_DANGEROUS_CONTENT",
+                        threshold="BLOCK_NONE",
+                    ),
+                ],
+            )
+
+            print(model.split("/")[-1])
+            response = self.client.models.generate_content(
+                model=model.split("/")[-1],
+                contents=contents,
+                config=config,
+            )
+
+            # Process response to extract both text and images
+            result = {"text": "", "images": []}
+
+            for candidate in response.candidates:
+                for part in candidate.content.parts:
+                    if part.text is not None:
+                        result["text"] += part.text
+                    elif part.inline_data is not None:
+                        # Convert byte data to PIL Image
+                        image = Image.open(io.BytesIO(part.inline_data.data))
+                        result["images"].append(image)
+
+            return result
+        except Exception as e:
+            raise e
+
+    async def generate_async(
+        self,
+        messages,
+        temperature,
+        max_tokens,
+        model="gemini/gemini-2.0-flash-exp-image-generation",
+        **kwargs,
+    ):
+        # For simplicity, we'll use the synchronous version for now
+        # In a real-world scenario, you might want to use an async implementation
+        return self.generate(messages, temperature, max_tokens, model, **kwargs)
 
 
 class DeepSeekProvider(AIProvider):
@@ -638,7 +871,17 @@ class DeepSeekProvider(AIProvider):
             base_url="https://api.deepseek.com",
         )
 
-    def call_ai(self, messages, temperature, max_tokens, model="deepseek-chat", **kwargs):
+    def generate(self, messages, temperature, max_tokens, model=None, **kwargs):
+        raise NotImplementedError("This provider does not support image generation")
+
+    async def generate_async(
+        self, messages, temperature, max_tokens, model=None, **kwargs
+    ):
+        raise NotImplementedError("This provider does not support image generation")
+
+    def call_ai(
+        self, messages, temperature, max_tokens, model="deepseek-chat", **kwargs
+    ):
         try:
             response = self.sync_client.chat.completions.create(
                 model=model,
@@ -651,7 +894,9 @@ class DeepSeekProvider(AIProvider):
         except Exception as e:
             raise e
 
-    async def call_ai_async(self, messages, temperature, max_tokens, model="deepseek-chat", **kwargs):
+    async def call_ai_async(
+        self, messages, temperature, max_tokens, model="deepseek-chat", **kwargs
+    ):
         try:
             response = await self.async_client.chat.completions.create(
                 model=model,
@@ -676,12 +921,7 @@ class AIManager:
         for provider in self.providers.values():
             if model in provider.supported_models:
                 return provider
-        if self.fallback_provider:
-            return self.fallback_provider
         raise ValueError(f"No provider found for model: {model}")
-
-    def set_fallback_provider(self, provider):
-        self.fallback_provider = provider
 
     def call_ai(self, messages, temperature, max_tokens, model, **kwargs):
         provider = self.get_provider(model)
@@ -704,7 +944,9 @@ class AIManager:
             except Exception:
                 prompt_cost = 0.0
 
-            response = provider.call_ai(messages, temperature, max_tokens, model, **kwargs)
+            response = provider.call_ai(
+                messages, temperature, max_tokens, model, **kwargs
+            )
 
             # Calculate completion cost estimate
             try:
@@ -741,7 +983,9 @@ class AIManager:
             except Exception:
                 prompt_cost = 0.0
 
-            response = await provider.call_ai_async(messages, temperature, max_tokens, model, **kwargs)
+            response = await provider.call_ai_async(
+                messages, temperature, max_tokens, model, **kwargs
+            )
 
             try:
                 # completion_cost = float(calculate_completion_cost(response, model))
@@ -752,6 +996,44 @@ class AIManager:
             total_cost = prompt_cost + completion_cost
 
             return response, total_cost
+        else:
+            raise ValueError(f"No provider found for model: {model}")
+
+    def generate(self, messages, temperature, max_tokens, model, **kwargs):
+        provider = self.get_provider(model)
+        if provider:
+            try:
+                prompt_cost = 0.0  # Cost calculation could be implemented later
+
+                response = provider.generate(
+                    messages, temperature, max_tokens, model, **kwargs
+                )
+
+                completion_cost = 0.0  # Cost calculation could be implemented later
+                total_cost = prompt_cost + completion_cost
+
+                return response, total_cost
+            except NotImplementedError:
+                raise ValueError(f"Model {model} does not support image generation")
+        else:
+            raise ValueError(f"No provider found for model: {model}")
+
+    async def generate_async(self, messages, temperature, max_tokens, model, **kwargs):
+        provider = self.get_provider(model)
+        if provider:
+            try:
+                prompt_cost = 0.0  # Cost calculation could be implemented later
+
+                response = await provider.generate_async(
+                    messages, temperature, max_tokens, model, **kwargs
+                )
+
+                completion_cost = 0.0  # Cost calculation could be implemented later
+                total_cost = prompt_cost + completion_cost
+
+                return response, total_cost
+            except NotImplementedError:
+                raise ValueError(f"Model {model} does not support image generation")
         else:
             raise ValueError(f"No provider found for model: {model}")
 
@@ -772,7 +1054,9 @@ class AIManager:
     reraise=True,
 )
 def call_ai_with_retry(ai_manager, messages, temperature, max_tokens, model, **kwargs):
-    response, cost = ai_manager.call_ai(messages, temperature, max_tokens, model=model, **kwargs)
+    response, cost = ai_manager.call_ai(
+        messages, temperature, max_tokens, model=model, **kwargs
+    )
     return response, cost
 
 
@@ -791,12 +1075,62 @@ def call_ai_with_retry(ai_manager, messages, temperature, max_tokens, model, **k
     stop=stop_after_attempt(3),
     reraise=True,
 )
-async def call_ai_async_with_retry(ai_manager, messages, temperature, max_tokens, model, **kwargs):
-    response, cost = await ai_manager.call_ai_async(messages, temperature, max_tokens, model=model, **kwargs)
+async def call_ai_async_with_retry(
+    ai_manager, messages, temperature, max_tokens, model, **kwargs
+):
+    response, cost = await ai_manager.call_ai_async(
+        messages, temperature, max_tokens, model=model, **kwargs
+    )
     return response, cost
 
 
-# Replace the immediate initialization with a singleton class
+# Add retry wrapper functions
+@retry(
+    retry=(
+        retry_if_exception_type(APITimeoutError)
+        | retry_if_exception_type(APIConnectionError)
+        | retry_if_exception_type(RateLimitError)
+        | retry_if_exception_type(APIStatusError)
+        | retry_if_exception_type(google_exceptions.DeadlineExceeded)
+        | retry_if_exception_type(google_exceptions.ServiceUnavailable)
+        | retry_if_exception_type(google_exceptions.ResourceExhausted)
+        | retry_if_exception_type(anthropic.InternalServerError)
+    ),
+    wait=wait_exponential(multiplier=2, min=2, max=120),
+    stop=stop_after_attempt(3),
+    reraise=True,
+)
+def generate_with_retry(ai_manager, messages, temperature, max_tokens, model, **kwargs):
+    response, cost = ai_manager.generate(
+        messages, temperature, max_tokens, model=model, **kwargs
+    )
+    return response, cost
+
+
+@retry(
+    retry=(
+        retry_if_exception_type(APITimeoutError)
+        | retry_if_exception_type(APIConnectionError)
+        | retry_if_exception_type(RateLimitError)
+        | retry_if_exception_type(APIStatusError)
+        | retry_if_exception_type(google_exceptions.DeadlineExceeded)
+        | retry_if_exception_type(google_exceptions.ServiceUnavailable)
+        | retry_if_exception_type(google_exceptions.ResourceExhausted)
+        | retry_if_exception_type(anthropic.InternalServerError)
+    ),
+    wait=wait_exponential(multiplier=2, min=2, max=120),
+    stop=stop_after_attempt(3),
+    reraise=True,
+)
+async def generate_async_with_retry(
+    ai_manager, messages, temperature, max_tokens, model, **kwargs
+):
+    response, cost = await ai_manager.generate_async(
+        messages, temperature, max_tokens, model=model, **kwargs
+    )
+    return response, cost
+
+
 class AIManagerSingleton:
     _instance = None
 
@@ -806,62 +1140,71 @@ class AIManagerSingleton:
             cls._instance = AIManager()
             # Initialize providers only when needed
             if os.getenv("OPENAI_API_KEY"):
-                cls._instance.add_provider(OpenAIProvider())
+                try:
+                    cls._instance.add_provider(OpenAIProvider())
+                except Exception as e:
+                    print(f"Error adding OpenAI provider: {e}")
             if os.getenv("ANTHROPIC_API_KEY"):
-                cls._instance.add_provider(AnthropicProvider())
+                try:
+                    cls._instance.add_provider(AnthropicProvider())
+                except Exception as e:
+                    print(f"Error adding Anthropic provider: {e}")
             if os.getenv("GOOGLE_API_KEY"):
-                cls._instance.add_provider(GeminiProvider())
+                try:
+                    cls._instance.add_provider(GeminiProvider())
+                except Exception as e:
+                    print(f"Error adding Gemini provider: {e}")
             if os.getenv("DEEPSEEK_API_KEY"):
-                cls._instance.add_provider(DeepSeekProvider())
+                try:
+                    cls._instance.add_provider(DeepSeekProvider())
+                except Exception as e:
+                    print(f"Error adding DeepSeek provider: {e}")
 
             if os.getenv("LMSTUDIO_IP") and os.getenv("LMSTUDIO_PORT"):
-                cls._instance.add_provider(
-                    LMStudioProvider(
-                        ip_address=os.getenv("LMSTUDIO_IP", "192.168.11.34"),
-                        port=int(os.getenv("LMSTUDIO_PORT", "1234")),
+                try:
+                    cls._instance.add_provider(
+                        LMStudioProvider(
+                            ip_address=os.getenv("LMSTUDIO_IP", "192.168.11.34"),
+                            port=int(os.getenv("LMSTUDIO_PORT", "1234")),
+                        )
                     )
-                )
-                cls._instance.set_fallback_provider(cls._instance.providers["LMStudioProvider"])
+                except Exception as e:
+                    print(f"Error adding LMStudio provider: {e}")
+
         return cls._instance
 
 
-# Update the call_ai and call_ai_async functions to use the singleton
-def call_ai(model: str, messages: List[Message], temperature=0.1, max_tokens=4096, **kwargs):
+def call_ai(
+    model: str, messages: List[Message], temperature=0.1, max_tokens=4096, **kwargs
+):
     ai_manager = AIManagerSingleton.get_instance()
-    return call_ai_with_retry(ai_manager, messages, temperature, max_tokens, model, **kwargs)
+    return call_ai_with_retry(
+        ai_manager, messages, temperature, max_tokens, model, **kwargs
+    )
 
 
-def call_ai_async(model: str, messages: List[Message], temperature=0.1, max_tokens=4096, **kwargs):
+def call_ai_async(
+    model: str, messages: List[Message], temperature=0.1, max_tokens=4096, **kwargs
+):
     ai_manager = AIManagerSingleton.get_instance()
-    return call_ai_async_with_retry(ai_manager, messages, temperature, max_tokens, model, **kwargs)
+    return call_ai_async_with_retry(
+        ai_manager, messages, temperature, max_tokens, model, **kwargs
+    )
 
 
-"""
-# Usage example
-async def main():
-    messages = [
-        {"role": "system", "content": "You are a helpful assistant."},
-        {"role": "user", "content": "Hello, how are you?"},
-    ]
-
-    # Text-only example
-    response_text = await call_ai_async(messages, temperature=0.7, max_tokens=150, model="gpt-4o-mini")
-    print("Text response:", response_text)
-
-    # Image example
-    image_messages = [
-        {
-            "role": "user",
-            "content": [
-                {"type": "text", "text": "Describe this image:"},
-                {"type": "image_url", "image_url": {"url": "assets/logo.webp"}},
-            ],
-        }
-    ]
-    response_image = await call_ai_async(image_messages, temperature=0.7, max_tokens=150, model="gemini-1.5-flash")
-    print("Image description:", response_image)
+def generate(
+    model: str, messages: List[Message], temperature=0.1, max_tokens=4096, **kwargs
+):
+    ai_manager = AIManagerSingleton.get_instance()
+    return generate_with_retry(
+        ai_manager, messages, temperature, max_tokens, model, **kwargs
+    )
 
 
-if __name__ == "__main__":
-    asyncio.run(main())
-"""
+async def generate_async(
+    model: str, messages: List[Message], temperature=0.1, max_tokens=4096, **kwargs
+):
+    ai_manager = AIManagerSingleton.get_instance()
+    return generate_async_with_retry(
+        ai_manager, messages, temperature, max_tokens, model, **kwargs
+    )
