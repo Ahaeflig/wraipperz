@@ -1,6 +1,6 @@
-# wraipperz (WIP - agent generated)
+# wraipperz
 
-Simple wrappers for various AI APIs including LLMs, ASR, and TTS.
+Easy wrapper for various AI APIs including LLMs, ASR, and TTS.
 
 ## Installation
 
@@ -63,6 +63,48 @@ user = User(**yaml.safe_load(yaml_content))
 print(user)  # prints name='John' age=31
 ```
 
+### Image Generation and Modification (todo check readme)
+
+```python
+from wraipperz import generate, MessageBuilder
+from PIL import Image
+
+# Text-to-image generation
+messages = MessageBuilder().add_user("Generate an image of a futuristic city skyline at sunset.").build()
+
+result, cost = generate(
+    model="gemini/gemini-2.0-flash-exp-image-generation",
+    messages=messages,
+    temperature=0.7,
+    max_tokens=4096
+)
+
+# The result contains both text and images
+print(result["text"])  # Text description/commentary from the model
+
+# Save the generated images
+for i, image in enumerate(result["images"]):
+    image.save(f"generated_city_{i}.png")
+    # image.show()  # Uncomment to display the image
+
+# Image modification with input image
+input_image = Image.open("input_photo.jpg")  # Replace with your image path
+
+image_messages = MessageBuilder().add_user("Add a futuristic flying car to this image.").add_image(input_image).build()
+
+result, cost = generate(
+    model="gemini/gemini-2.0-flash-exp-image-generation",
+    messages=image_messages,
+    temperature=0.7,
+    max_tokens=4096
+)
+
+# Save the modified images
+for i, image in enumerate(result["images"]):
+    image.save(f"modified_image_{i}.png")
+```
+
+The `generate` function returns a dictionary containing both textual response and generated images, enabling multimodal AI capabilities in your applications.
 
 ### TTS
 
