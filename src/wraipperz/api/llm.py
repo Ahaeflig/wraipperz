@@ -822,7 +822,6 @@ class GeminiProvider(AIProvider):
                 ],
             )
 
-            print(model.split("/")[-1])
             response = self.client.models.generate_content(
                 model=model.split("/")[-1],
                 contents=contents,
