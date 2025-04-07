@@ -296,7 +296,7 @@ def test_cartesia_provider_generate_speech():
         _ = provider.generate_speech(
             text="This is a test of the Cartesia text to speech API.",
             output_path=output_path,
-            voice="default",  # Use default voice or replace with a valid voice ID
+            voice="bf0a246a-8642-498a-9950-80c35e9276b5",
         )
 
         # Verify file was created and has content

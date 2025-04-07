@@ -1116,7 +1116,7 @@ class CartesiaTTSProvider(TTSProvider):
         text: str,
         output_path: str,
         voice: str,
-        model_id: str = "sonic",
+        model_id: str = "sonic-2",
         language: str = "en",
         **kwargs,
     ) -> dict | None:
@@ -1137,7 +1137,7 @@ class CartesiaTTSProvider(TTSProvider):
                 output_format["bit_rate"] = kwargs.get("bit_rate", 128000)
 
             # Generate audio using the SDK
-            response = self.client.tts.bytes(
+            response_generator = self.client.tts.bytes(
                 model_id=model_id,
                 transcript=text,
                 voice=voice_spec,
@@ -1145,9 +1145,17 @@ class CartesiaTTSProvider(TTSProvider):
                 output_format=output_format,
             )
 
+            # Collect all audio chunks from the generator
+            audio_chunks = []
+            for chunk in response_generator:
+                audio_chunks.append(chunk)
+
+            # Combine all chunks into a single bytes object
+            audio_data = b"".join(audio_chunks)
+
             # Save the audio response
             with open(output_path, "wb") as f:
-                f.write(response)
+                f.write(audio_data)
 
             result = {"status": "success"}
 
@@ -1160,7 +1168,7 @@ class CartesiaTTSProvider(TTSProvider):
 
                 try:
                     with open(temp_file, "wb") as f:
-                        f.write(response)
+                        f.write(audio_data)
                     asr_result = self.asr_manager.transcribe(
                         "openai", temp_file, language=language
                     )
@@ -1222,6 +1230,21 @@ class CartesiaTTSProvider(TTSProvider):
             if "rate limit" in str(e).lower():
                 raise TTSRateLimitError(f"Cartesia API rate limit exceeded: {str(e)}")
             raise TTSError(f"Cartesia voice conversion failed: {str(e)}")
+
+    def print_available_voices(self):
+        """Debug helper to print available voices"""
+        try:
+            voices = self.client.voices.list()
+            print("Available voices:")
+            for voice in voices:
+                print(
+                    f"  - {voice.get('name', 'Unknown')} (ID: {voice.get('id', 'Unknown')})"
+                )
+                print(f"    Language: {voice.get('language', 'Unknown')}")
+                print(f"    Description: {voice.get('description', 'None')}")
+                print("")
+        except Exception as e:
+            print(f"Error listing voices: {e}")
 
 
 class TTSManager:
