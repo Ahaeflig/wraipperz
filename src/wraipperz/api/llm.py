@@ -135,6 +135,7 @@ class OpenAIProvider(AIProvider):
         "openai/gpt-4o-search-preview-2025-03-11",
         "openai/gpt-4-0125-preview",
         "openai/gpt-4-turbo-preview",
+        "openai/gpt-4.1-mini-2025-04-14",
     ]
 
     def __init__(self, api_key=None):
