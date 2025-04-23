@@ -9,6 +9,14 @@ from .llm import (
     generate_async,
 )
 from .messages import Message, MessageBuilder
+from .video_gen import (
+    PixVerseProvider,
+    generate_video_from_text,
+    generate_video_from_image,
+    get_video_status,
+    wait_for_video_completion,
+    download_video,
+)
 
 __all__ = [
     "call_ai",
@@ -19,6 +27,12 @@ __all__ = [
     "DeepSeekProvider",
     "GeminiProvider",
     "OpenAIProvider",
+    "PixVerseProvider",
     "Message",
     "MessageBuilder",
+    "generate_video_from_text",
+    "generate_video_from_image",
+    "get_video_status",
+    "wait_for_video_completion",
+    "download_video",
 ]

@@ -301,6 +301,9 @@ docutils==0.21.2 \
 exceptiongroup==1.2.2 ; python_full_version < '3.11' \
     --hash=sha256:3111b9d131c238bec2f8f516e123e14ba243563fb135d3fe885990585aa7795b \
     --hash=sha256:47c2edf7c6738fafb49fd34290706d1a1a2f4d1c6df275526b62cbb4aa5393cc
+fal-client==0.5.9 \
+    --hash=sha256:238a5300293d8d8da1204f4455dc78b1539f2ff20122f870e7280ccc29f28922 \
+    --hash=sha256:f45dae7553c5b85e00418957cc4c8531e24f64e5aa7c7dad862ed67e7cfb0f03
 filelock==3.18.0 \
     --hash=sha256:adbc88eabb99d2fec8c9c1b229b171f18afa655400173ddc653d5d01501fb9f2 \
     --hash=sha256:c401f4f8377c4464e6db25fff06205fd89bdd83b65eb0488ed1b160f780e21de

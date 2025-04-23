@@ -546,6 +546,19 @@ wheels = [
 ]
 
 [[package]]
+name = "fal-client"
+version = "0.5.9"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "httpx" },
+    { name = "httpx-sse" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/20/28/c5710df43dd0a14e23fe86e8a6ed284679b9604ac9d09c6c8efede6056ae/fal_client-0.5.9.tar.gz", hash = "sha256:238a5300293d8d8da1204f4455dc78b1539f2ff20122f870e7280ccc29f28922", size = 13924 }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/b7/fe/82a277970bc4cd1711f526bea481e6a54c3e4036a25235deb30497529d41/fal_client-0.5.9-py3-none-any.whl", hash = "sha256:f45dae7553c5b85e00418957cc4c8531e24f64e5aa7c7dad862ed67e7cfb0f03", size = 10414 },
+]
+
+[[package]]
 name = "filelock"
 version = "3.18.0"
 source = { registry = "https://pypi.org/simple" }
@@ -2187,12 +2200,13 @@ wheels = [
 
 [[package]]
 name = "wraipperz"
-version = "0.1.13"
+version = "0.1.14"
 source = { editable = "." }
 dependencies = [
     { name = "anthropic" },
     { name = "cartesia" },
     { name = "deepgram-sdk" },
+    { name = "fal-client" },
     { name = "google-genai" },
     { name = "google-generativeai" },
     { name = "openai" },
@@ -2218,6 +2232,7 @@ requires-dist = [
     { name = "anthropic", specifier = ">=0.49.0" },
     { name = "cartesia", specifier = "==2.0.0" },
     { name = "deepgram-sdk", specifier = ">=3.10.1" },
+    { name = "fal-client", specifier = ">=0.5.9" },
     { name = "google-genai", specifier = ">=1.5.0" },
     { name = "google-generativeai", specifier = ">=0.8.4" },
     { name = "openai", specifier = ">=1.66.3" },

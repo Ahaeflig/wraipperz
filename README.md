@@ -1,12 +1,24 @@
 # wraipperz
 
-Easy wrapper for various AI APIs including LLMs, ASR, and TTS.
+Easy wrapper for various AI APIs including LLMs, ASR, TTS, and Video Generation.
 
 ## Installation
+
+Basic installation:
 
 ```bash
 pip install wraipperz
 uv add wraipperz
+```
+
+With optional dependencies for specific providers:
+
+```bash
+# For fal.ai video generation
+pip install wraipperz fal-client
+
+# For all supported providers
+pip install wraipperz "wraipperz[all]"
 ```
 
 ## Features
@@ -14,6 +26,7 @@ uv add wraipperz
 - **LLM API Wrappers**: Unified interface for OpenAI, Anthropic, Google, and other LLM providers
 - **ASR (Automatic Speech Recognition)**: Convert speech to text
 - **TTS (Text-to-Speech)**: Convert text to speech
+- **Video Generation**: Text-to-video and image-to-video generation
 - **Async Support**: Asynchronous API calls for improved performance
 
 ## Quick Start
@@ -106,6 +119,98 @@ for i, image in enumerate(result["images"]):
 
 The `generate` function returns a dictionary containing both textual response and generated images, enabling multimodal AI capabilities in your applications.
 
+### Video Generation
+
+```python
+import os
+from wraipperz import generate_video_from_text, generate_video_from_image, wait_for_video_completion
+from PIL import Image
+
+# Set your API key
+os.environ["PIXVERSE_API_KEY"] = "your_pixverse_key"
+
+# Text-to-Video Generation with automatic download
+result = generate_video_from_text(
+    model="pixverse/text-to-video-v3.5",
+    prompt="A serene mountain lake at sunrise, with mist rising from the water.",
+    negative_prompt="blurry, distorted, low quality, text, watermark",
+    duration=5,  # 5 seconds
+    quality="720p",
+    style="3d_animation",  # Optional: "anime", "3d_animation", "day", "cyberpunk", "comic"
+    wait_for_completion=True,  # Wait for the video to complete
+    output_path="videos/mountain_lake"  # Extension (.mp4) will be added automatically
+)
+
+print(f"Video downloaded to: {result['file_path']}")
+print(f"Video URL: {result['url']}")
+
+# Image-to-Video Generation
+# Load an image
+image = Image.open("your_image.jpg")
+
+# Convert the image to a video with motion and download automatically
+result = generate_video_from_image(
+    model="pixverse/image-to-video-v3.5",
+    image_path=image,  # Can also be a file path string
+    prompt="Add gentle motion and waves to this image",
+    duration=5,
+    quality="720p",
+    output_path="videos/animated_image.mp4"  # Specify full path with extension
+)
+
+print(f"Video downloaded to: {result['file_path']}")
+```
+
+
+#### Using fal.ai for Video Generation
+
+```python
+import os
+from wraipperz import generate_video_from_image
+from PIL import Image
+
+# Set your API key
+os.environ["FAL_KEY"] = "your_fal_key"
+
+# Works with local image paths (auto-encoded as base64)
+result = generate_video_from_image(
+    model="fal/kling-video-v2-master",  # Using Kling 2.0 Master
+    image_path="path/to/your/local/image.jpg",  # Local image path
+    prompt="A beautiful mountain scene with gentle motion in the clouds and water",
+    duration="5",  # "5" or "10" seconds
+    aspect_ratio="16:9",  # "16:9", "9:16", or "1:1"
+    wait_for_completion=True,
+    output_path="videos/fal_mountain_scene.mp4"
+)
+
+print(f"Video downloaded to: {result['file_path']}")
+
+# Works directly with PIL Image objects
+pil_image = Image.open("path/to/your/image.jpg")
+result = generate_video_from_image(
+    model="fal/minimax-video",  # Options: fal/minimax-video, fal/luma-dream-machine, fal/kling-video
+    image_path=pil_image,  # PIL Image object
+    prompt="Gentle ocean waves with clouds moving in the sky",
+    wait_for_completion=True,
+    output_path="videos/fal_ocean_scene"  # Extension will be added automatically
+)
+
+print(f"Video downloaded to: {result['file_path']}")
+
+# You can also still use image URLs if you prefer
+result = generate_video_from_image(
+    model="fal/kling-video-v2-master",
+    image_path="https://example.com/your-image.jpg",  # Web URL
+    prompt="A colorful autumn scene with leaves gently falling",
+    wait_for_completion=True,
+    output_path="videos/fal_autumn_scene"
+)
+
+print(f"Video downloaded to: {result['file_path']}")
+```
+
+**Note**: fal.ai requires the `fal-client` package. Install it with `pip install fal-client`.
+
 ### TTS
 
 ```python
@@ -137,6 +242,9 @@ Set up your API keys in environment variables to enable providers.
 OPENAI_API_KEY=your_openai_key
 ANTHROPIC_API_KEY=your_anthropic_key
 GOOGLE_API_KEY=your_google_key
+PIXVERSE_API_KEY=your_pixverse_key
+KLING_API_KEY=your_kling_key
+FAL_KEY=your_fal_key
 # ...  todo add all
 ```
 
