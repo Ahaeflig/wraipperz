@@ -253,10 +253,6 @@ class FalProvider(VideoGenProvider):
 
         # Process image based on input type
         if isinstance(image_path, Image.Image):
-            # Convert to RGB if it's RGBA
-            if image_path.mode == "RGBA":
-                image_path = image_path.convert("RGB")
-
             # Use the image directly
             img = image_path
         else:
@@ -269,6 +265,13 @@ class FalProvider(VideoGenProvider):
             img = Image.open(path)
             # Try to determine mime type from file
             mime_type = mimetypes.guess_type(str(path))[0] or "image/jpeg"
+
+        # Convert to RGB if it's RGBA (or any mode with transparency)
+        if img.mode in ("RGBA", "LA") or (
+            img.mode == "P" and "transparency" in img.info
+        ):
+            print(f"Converting image from {img.mode} mode to RGB")
+            img = img.convert("RGB")
 
         # Resize the image if needed
         resized_img, _ = self.resize_image_if_needed(
