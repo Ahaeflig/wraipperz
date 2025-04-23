@@ -718,7 +718,12 @@ class KlingAIProvider(VideoGenProvider):
 
 
 class PixVerseProvider(VideoGenProvider):
-    supported_models = ["pixverse/text-to-video-v3.5", "pixverse/image-to-video-v3.5"]
+    supported_models = [
+        "pixverse/text-to-video-v3.5",
+        "pixverse/image-to-video-v3.5",
+        "pixverse/image-to-video-v4.0",
+        "pixverse/text-to-video-v4.0",
+    ]
 
     def __init__(self, api_key=None):
         self.api_key = api_key or os.getenv("PIXVERSE_API_KEY")
