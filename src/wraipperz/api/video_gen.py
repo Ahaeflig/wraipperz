@@ -12,6 +12,7 @@ import io
 import mimetypes
 import urllib.parse
 import uuid
+import re
 
 load_dotenv(override=True)
 
@@ -208,6 +209,11 @@ class FalProvider(VideoGenProvider):
         "fal/kling-video",
         "fal/kling-video-v2-master",
         "fal/veo2",
+        "fal/pixverse-v4",
+        "fal/wan-pro",
+        "fal/magi-distilled",
+        "fal/vidu",
+        "fal/ltx-video-v095",
     ]
 
     model_mapping = {
@@ -216,6 +222,11 @@ class FalProvider(VideoGenProvider):
         "fal/kling-video": "fal-ai/kling-video/v1/standard",
         "fal/kling-video-v2-master": "fal-ai/kling-video/v2/master/image-to-video",
         "fal/veo2": "fal-ai/veo2/image-to-video",
+        "fal/pixverse-v4": "fal-ai/pixverse/v4/image-to-video",
+        "fal/wan-pro": "fal-ai/wan-pro/image-to-video",
+        "fal/magi-distilled": "fal-ai/magi-distilled/image-to-video",
+        "fal/vidu": "fal-ai/vidu/image-to-video",
+        "fal/ltx-video-v095": "fal-ai/ltx-video-v095/image-to-video",
     }
 
     def __init__(self, api_key=None):
@@ -376,6 +387,13 @@ class FalProvider(VideoGenProvider):
             else:
                 # Use default negative prompt
                 arguments["negative_prompt"] = "blur, distort, and low quality"
+
+        # Handle quality/resolution parameter compatibility
+        # If quality is specified but resolution isn't, use quality value for resolution
+        if "quality" in kwargs and "resolution" not in kwargs:
+            arguments["resolution"] = kwargs["quality"]
+            # Keep quality for backwards compatibility
+            arguments["quality"] = kwargs["quality"]
 
         # Include any other valid kwargs
         for key, value in kwargs.items():
@@ -733,6 +751,24 @@ class PixVerseProvider(VideoGenProvider):
         self.api_base = "https://app-api.pixverse.ai/openapi/v2"
         self.headers = {"API-KEY": self.api_key, "Content-Type": "application/json"}
 
+    def _extract_model_version(self, model_name):
+        """Extract the version from the model name (e.g., '3.5' from 'pixverse/text-to-video-v3.5')"""
+        if not model_name:
+            return "v4.0"  # Default fallback
+
+        # For debugging
+        print(f"Extracting version from model name: {model_name}")
+
+        if "/" in model_name:
+            # Extract part after the slash
+            model_name = model_name.split("/")[1]
+
+        version_match = re.search(r"v(\d+\.\d+)$", model_name)
+        if version_match:
+            return f"v{version_match.group(1)}"  # Return with v prefix (e.g., 'v4.0')
+
+        return "v4.0"  # Default fallback if no version found
+
     def upload_image(self, image_path: Union[str, Path, Image.Image]) -> int:
         """Upload an image to PixVerse and get an image ID"""
         upload_url = f"{self.api_base}/image/upload"
@@ -838,9 +874,12 @@ class PixVerseProvider(VideoGenProvider):
             "Ai-trace-id": ai_trace_id,
         }
 
+        # Extract model version from the model parameter
+        model_version = self._extract_model_version(kwargs.get("model"))
+
         # Prepare request payload
         payload = {
-            "model": "v3.5",
+            "model": model_version,
             "prompt": prompt,
             "duration": duration,
             "quality": quality,
@@ -923,9 +962,14 @@ class PixVerseProvider(VideoGenProvider):
             "Ai-trace-id": ai_trace_id,
         }
 
+        # Extract model version from the model parameter
+        model_version = self._extract_model_version(kwargs.get("model"))
+
+        print(f"Using model version: {model_version}")
+
         # Prepare request payload
         payload = {
-            "model": "v3.5",
+            "model": model_version,
             "prompt": prompt,
             "img_id": img_id,
             "duration": duration,
@@ -1189,6 +1233,8 @@ class VideoGenManager:
     ) -> Dict[str, Any]:
         """Generate a video from an image"""
         provider = self.get_provider(model)
+        # Add model to kwargs so it's available inside provider methods
+        kwargs["model"] = model
         return provider.image_to_video(image_path, prompt, negative_prompt, **kwargs)
 
     def get_video_status(self, model: str, video_id: int) -> Dict[str, Any]:
