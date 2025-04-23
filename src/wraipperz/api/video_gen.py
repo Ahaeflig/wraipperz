@@ -5,7 +5,7 @@ import json
 import base64
 import requests
 from pathlib import Path
-from typing import Dict, Optional, Union, Any
+from typing import Dict, Optional, Union, Any, Tuple
 from dotenv import load_dotenv
 from PIL import Image
 import io
@@ -46,6 +46,115 @@ class VideoGenProvider(abc.ABC):
     def get_video_status(self, video_id: int) -> Dict[str, Any]:
         """Get the status of a video generation job"""
         pass
+
+    def resize_image_if_needed(
+        self,
+        img: Image.Image,
+        max_size_bytes: int = 4000000,  # Default ~3.8MB
+        provider_name: str = "",
+    ) -> Tuple[Image.Image, int]:
+        """
+        Utility method to resize an image if it exceeds the maximum size limit.
+        Returns the resized image and the size in bytes.
+
+        Args:
+            img: The PIL Image to resize if needed
+            max_size_bytes: Maximum size in bytes (default 4MB)
+            provider_name: Name of the provider for logging
+
+        Returns:
+            Tuple containing (PIL Image, size in bytes)
+        """
+        # Start with original quality
+        quality = 95
+        max_attempts = 10
+        attempt = 0
+
+        # First check current size
+        buffered = io.BytesIO()
+        img.save(buffered, format="JPEG", quality=quality)
+        img_size = buffered.tell()
+
+        # If already small enough, return as is
+        if img_size <= max_size_bytes:
+            provider_prefix = f"{provider_name} " if provider_name else ""
+            print(
+                f"{provider_prefix}Image already within size limit ({img_size/1024:.1f} KB)"
+            )
+            return img, img_size
+
+        while attempt < max_attempts:
+            # Try reducing quality first (for first two attempts)
+            if attempt == 0 and img_size > max_size_bytes:
+                quality = 85
+                buffered = io.BytesIO()
+                img.save(buffered, format="JPEG", quality=quality)
+                img_size = buffered.tell()
+
+                if img_size <= max_size_bytes:
+                    provider_prefix = f"{provider_name} " if provider_name else ""
+                    print(
+                        f"{provider_prefix}Image compressed to {img_size/1024:.1f} KB with quality {quality}%"
+                    )
+                    return img, img_size
+
+                attempt += 1
+                continue
+            elif attempt == 1 and img_size > max_size_bytes:
+                quality = 75
+                buffered = io.BytesIO()
+                img.save(buffered, format="JPEG", quality=quality)
+                img_size = buffered.tell()
+
+                if img_size <= max_size_bytes:
+                    provider_prefix = f"{provider_name} " if provider_name else ""
+                    print(
+                        f"{provider_prefix}Image compressed to {img_size/1024:.1f} KB with quality {quality}%"
+                    )
+                    return img, img_size
+
+                attempt += 1
+                continue
+
+            # Calculate scale factor (reduce by 20% each time)
+            scale_factor = 0.8
+
+            # Get current dimensions
+            width, height = img.size
+
+            # Calculate new dimensions
+            new_width = int(width * scale_factor)
+            new_height = int(height * scale_factor)
+
+            # Resize the image
+            img = img.resize((new_width, new_height), Image.LANCZOS)
+
+            # Check new size
+            buffered = io.BytesIO()
+            img.save(buffered, format="JPEG", quality=95)  # Reset to high quality
+            img_size = buffered.tell()
+
+            provider_prefix = f"{provider_name} " if provider_name else ""
+            print(
+                f"{provider_prefix}Resized image to {new_width}x{new_height} ({img_size/1024:.1f} KB)"
+            )
+
+            if img_size <= max_size_bytes:
+                return img, img_size
+
+            attempt += 1
+
+        # If we reach here, use minimum reasonable size/quality
+        buffered = io.BytesIO()
+        img.save(buffered, format="JPEG", quality=70)
+        img_size = buffered.tell()
+
+        provider_prefix = f"{provider_name} " if provider_name else ""
+        print(
+            f"{provider_prefix}Warning: Could not reduce image below target size. Final size: {img_size/1024:.1f} KB"
+        )
+
+        return img, img_size
 
     def download_video(
         self, video_url: Union[str, dict], output_path: Union[str, Path]
@@ -127,28 +236,39 @@ class FalProvider(VideoGenProvider):
         # Determine the mime type
         mime_type = "image/jpeg"  # Default
 
+        # Maximum allowed request body size for Fal.ai is 4MB (4194304 bytes)
+        # We'll use a slightly lower limit to account for overhead
+        MAX_IMAGE_SIZE_BYTES = 4000000  # ~3.8MB
+
         # Process image based on input type
         if isinstance(image_path, Image.Image):
-            # Convert PIL Image to bytes
-            buffered = io.BytesIO()
             # Convert to RGB if it's RGBA
             if image_path.mode == "RGBA":
                 image_path = image_path.convert("RGB")
-            image_path.save(buffered, format="JPEG")
-            img_bytes = buffered.getvalue()
+
+            # Use the image directly
+            img = image_path
         else:
             # Handle string path or Path object
             path = Path(image_path)
             if not path.exists():
                 raise ValueError(f"Image file not found: {image_path}")
 
-            with open(path, "rb") as img_file:
-                img_bytes = img_file.read()
+            # Load the image
+            img = Image.open(path)
             # Try to determine mime type from file
             mime_type = mimetypes.guess_type(str(path))[0] or "image/jpeg"
 
-        # Convert to base64
-        base64_data = base64.b64encode(img_bytes).decode("utf-8")
+        # Resize the image if needed
+        resized_img, _ = self.resize_image_if_needed(
+            img, MAX_IMAGE_SIZE_BYTES, "Fal.ai"
+        )
+
+        # Convert to bytes and then to base64
+        buffered = io.BytesIO()
+        resized_img.save(buffered, format="JPEG", quality=90)
+        buffered.seek(0)
+        base64_data = base64.b64encode(buffered.read()).decode("utf-8")
 
         # Format as data URI
         return f"data:{mime_type};base64,{base64_data}"
@@ -402,25 +522,35 @@ class KlingAIProvider(VideoGenProvider):
 
     def _encode_image(self, image_path: Union[str, Path, Image.Image]) -> str:
         """Convert image to base64 for API submission"""
+        # Maximum allowed request body size for KlingAI is 4MB (4194304 bytes)
+        # We'll use a slightly lower limit to account for overhead
+        MAX_IMAGE_SIZE_BYTES = 4000000  # ~3.8MB
+
         if isinstance(image_path, Image.Image):
-            # Convert PIL Image to bytes
-            buffered = io.BytesIO()
+            # Already a PIL image
+            img = image_path
             # Convert to RGB if it's RGBA
             if image_path.mode == "RGBA":
-                image_path = image_path.convert("RGB")
-            image_path.save(buffered, format="JPEG")
-            img_bytes = buffered.getvalue()
+                img = image_path.convert("RGB")
         else:
             # Handle string path or Path object
             path = Path(image_path)
             if not path.exists():
                 raise ValueError(f"Image file not found: {image_path}")
 
-            with open(path, "rb") as img_file:
-                img_bytes = img_file.read()
+            # Open as PIL image for potential resizing
+            img = Image.open(path)
+
+        # Resize if needed
+        resized_img, _ = self.resize_image_if_needed(
+            img, MAX_IMAGE_SIZE_BYTES, "KlingAI"
+        )
 
         # Convert to base64
-        return base64.b64encode(img_bytes).decode("utf-8")
+        buffered = io.BytesIO()
+        resized_img.save(buffered, format="JPEG", quality=90)
+        buffered.seek(0)
+        return base64.b64encode(buffered.read()).decode("utf-8")
 
     def text_to_video(
         self,
@@ -602,22 +732,47 @@ class PixVerseProvider(VideoGenProvider):
         """Upload an image to PixVerse and get an image ID"""
         upload_url = f"{self.api_base}/image/upload"
 
+        # Maximum size: Pixverse has higher limits, but we'll use 8MB to be safe
+        MAX_IMAGE_SIZE_BYTES = 8000000  # ~8MB
+
         # Handle PIL Image case
         temp_file = None
         try:
             if isinstance(image_path, Image.Image):
-                # Convert PIL Image to a temporary file
-                temp_file = Path(f"temp_image_{int(time.time())}.jpg")
                 # Convert to RGB if it's RGBA
                 if image_path.mode == "RGBA":
                     image_path = image_path.convert("RGB")
-                image_path.save(temp_file)
+
+                # Resize if needed
+                img = image_path
+                resized_img, _ = self.resize_image_if_needed(
+                    img, MAX_IMAGE_SIZE_BYTES, "Pixverse"
+                )
+
+                # Save to temporary file
+                temp_file = Path(f"temp_image_{int(time.time())}.jpg")
+                resized_img.save(temp_file)
                 file_path = temp_file
             else:
                 # Use the provided file path
-                file_path = Path(image_path)
-                if not file_path.exists():
+                path = Path(image_path)
+                if not path.exists():
                     raise ValueError(f"Image file not found: {image_path}")
+
+                # Load and resize if needed
+                img = Image.open(path)
+                resized_img, _ = self.resize_image_if_needed(
+                    img, MAX_IMAGE_SIZE_BYTES, "Pixverse"
+                )
+
+                # If we needed to resize, save to a temporary file
+                if resized_img != img:
+                    temp_file = Path(f"temp_image_{int(time.time())}.jpg")
+                    resized_img.save(temp_file)
+                    file_path = temp_file
+                else:
+                    # Use original file if no resize was needed
+                    file_path = path
 
             # Create a unique trace ID
             ai_trace_id = str(uuid.uuid4())
