@@ -1,5 +1,4 @@
 version = 1
-revision = 1
 requires-python = ">=3.10"
 resolution-markers = [
     "python_full_version >= '3.13' and python_full_version < '4.0'",
@@ -2201,7 +2200,7 @@ wheels = [
 
 [[package]]
 name = "wraipperz"
-version = "0.1.18"
+version = "0.1.19"
 source = { editable = "." }
 dependencies = [
     { name = "anthropic" },
