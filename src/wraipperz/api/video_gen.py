@@ -205,6 +205,7 @@ class FalProvider(VideoGenProvider):
 
     supported_models = [
         "fal/minimax-video",
+        "fal/minimax-video-live",
         "fal/luma-dream-machine",
         "fal/kling-video",
         "fal/kling-video-v2-master",
@@ -218,6 +219,7 @@ class FalProvider(VideoGenProvider):
 
     model_mapping = {
         "fal/minimax-video": "fal-ai/minimax-video/image-to-video",
+        "fal/minimax-video-live": "fal-ai/minimax/video-01-live/image-to-video",
         "fal/luma-dream-machine": "fal-ai/luma-dream-machine",
         "fal/kling-video": "fal-ai/kling-video/v1/standard",
         "fal/kling-video-v2-master": "fal-ai/kling-video/v2/master/image-to-video",
