@@ -3,6 +3,7 @@ from pathlib import Path
 
 import pytest
 from PIL import Image
+import numpy as np
 
 from wraipperz.api.llm import (
     AnthropicProvider,
@@ -223,6 +224,73 @@ def test_gemini_agent_like_content(gemini_provider):
     assert (
         "red" in response.lower()
     ), f"Expected response to contain description of red square, got: {response}"
+
+
+@pytest.mark.skipif(
+    not os.getenv("ANTHROPIC_API_KEY"), reason="Anthropic API key not found"
+)
+def test_anthropic_image_resizing(anthropic_provider):
+    """Test that AnthropicProvider automatically resizes large images"""
+    # Create a large test image (> 5MB)
+    large_image_path = TEST_ASSETS_DIR / "large_test_image.jpg"
+
+    # Either create a new large image or use existing one
+    if (
+        not large_image_path.exists()
+        or large_image_path.stat().st_size < 5 * 1024 * 1024
+    ):
+        # Create a much higher resolution image with random noise to ensure it's large
+        # Create random RGB data for a noisy image that compresses poorly
+        random_array = np.random.randint(0, 256, (5000, 5000, 3), dtype=np.uint8)
+        img = Image.fromarray(random_array)
+        # Save with minimal compression to ensure file is large
+        img.save(large_image_path, format="JPEG", quality=100)
+        print(f"Created image of size: {large_image_path.stat().st_size} bytes")
+
+    # Ensure the created image is actually large (> 5MB)
+    image_size = large_image_path.stat().st_size
+    assert (
+        image_size > 5 * 1024 * 1024
+    ), f"Test image not large enough: {image_size} bytes"
+    print(f"Confirmed image size: {image_size} bytes")
+
+    # Process the image and check if the result is smaller than 5MB
+    image_data = anthropic_provider._process_image(large_image_path)
+    # The base64 encoding increases size by ~33%, so we need to check the decoded size
+    decoded_size = len(image_data) * 3 // 4  # Approximation of base64 decoded size
+
+    # Check if the processed image is under the 5MB limit
+    assert (
+        decoded_size < 5 * 1024 * 1024
+    ), f"Image not resized properly: {decoded_size} bytes"
+    print(f"Successfully resized image to: {decoded_size} bytes")
+
+    # Test that we can use this image in a message
+    large_image_messages = [
+        {
+            "role": "user",
+            "content": [
+                {
+                    "type": "text",
+                    "text": "What's in this image? Describe it briefly.",
+                },
+                {"type": "image_url", "image_url": {"url": str(large_image_path)}},
+            ],
+        }
+    ]
+
+    try:
+        response = anthropic_provider.call_ai(
+            messages=large_image_messages,
+            temperature=0,
+            max_tokens=150,
+            model="claude-3-5-sonnet-20240620",
+        )
+        assert isinstance(response, str)
+        assert len(response) > 0
+        print(f"Got response: {response[:100]}...")  # Print first 100 chars
+    except Exception as e:
+        pytest.fail(f"Failed to process large image: {str(e)}")
 
 
 def test_gemini_system_prompt_only():

@@ -337,26 +337,154 @@ class AnthropicProvider(AIProvider):
         return system_content, user_messages
 
     def _process_image(self, image_path):
+        MAX_IMAGE_SIZE = 5 * 1024 * 1024  # 5MB in bytes
+
         if isinstance(image_path, (str, Path)):
             path = Path(image_path)
             if path.is_file():
+                # Read the image file
                 with open(path, "rb") as image_file:
-                    return base64.b64encode(image_file.read()).decode("utf-8")
+                    image_data = image_file.read()
+
+                # Check if image needs resizing
+                if len(image_data) > MAX_IMAGE_SIZE:
+                    # Open with PIL and resize
+                    img = Image.open(io.BytesIO(image_data))
+
+                    # Calculate scaling factor to get under the limit
+                    # Start with 0.5 scaling as suggested
+                    scale = 0.5
+                    img_resized = img.resize(
+                        (int(img.width * scale), int(img.height * scale))
+                    )
+
+                    # Keep resizing if still too large
+                    buffer = io.BytesIO()
+                    img_format = img.format or "JPEG"
+                    img_resized.save(buffer, format=img_format)
+                    resized_data = buffer.getvalue()
+
+                    while len(resized_data) > MAX_IMAGE_SIZE and scale > 0.1:
+                        # Reduce scale further if still too large
+                        scale *= 0.8
+                        img_resized = img.resize(
+                            (int(img.width * scale), int(img.height * scale))
+                        )
+                        buffer = io.BytesIO()
+                        img_resized.save(buffer, format=img_format)
+                        resized_data = buffer.getvalue()
+
+                    return base64.b64encode(resized_data).decode("utf-8")
+
+                # If image is already small enough, just return the encoded data
+                return base64.b64encode(image_data).decode("utf-8")
             # Add URL handling
             elif str(image_path).startswith(("http://", "https://")):
                 response = requests.get(str(image_path))
                 response.raise_for_status()
-                return base64.b64encode(response.content).decode("utf-8")
+                image_data = response.content
+
+                # Check if image needs resizing
+                if len(image_data) > MAX_IMAGE_SIZE:
+                    # Open with PIL and resize
+                    img = Image.open(io.BytesIO(image_data))
+
+                    # Start with 0.5 scaling
+                    scale = 0.5
+                    img_resized = img.resize(
+                        (int(img.width * scale), int(img.height * scale))
+                    )
+
+                    # Keep resizing if still too large
+                    buffer = io.BytesIO()
+                    img_format = img.format or "JPEG"
+                    img_resized.save(buffer, format=img_format)
+                    resized_data = buffer.getvalue()
+
+                    while len(resized_data) > MAX_IMAGE_SIZE and scale > 0.1:
+                        # Reduce scale further if still too large
+                        scale *= 0.8
+                        img_resized = img.resize(
+                            (int(img.width * scale), int(img.height * scale))
+                        )
+                        buffer = io.BytesIO()
+                        img_resized.save(buffer, format=img_format)
+                        resized_data = buffer.getvalue()
+
+                    return base64.b64encode(resized_data).decode("utf-8")
+
+                return base64.b64encode(image_data).decode("utf-8")
             else:
                 raise ValueError(f"File not found: {image_path}")
         elif isinstance(image_path, bytes):
-            return base64.b64encode(image_path).decode("utf-8")
+            image_data = image_path
+
+            # Check if image needs resizing
+            if len(image_data) > MAX_IMAGE_SIZE:
+                # Open with PIL and resize
+                img = Image.open(io.BytesIO(image_data))
+
+                # Start with 0.5 scaling
+                scale = 0.5
+                img_resized = img.resize(
+                    (int(img.width * scale), int(img.height * scale))
+                )
+
+                # Keep resizing if still too large
+                buffer = io.BytesIO()
+                img_format = img.format or "JPEG"
+                img_resized.save(buffer, format=img_format)
+                resized_data = buffer.getvalue()
+
+                while len(resized_data) > MAX_IMAGE_SIZE and scale > 0.1:
+                    # Reduce scale further if still too large
+                    scale *= 0.8
+                    img_resized = img.resize(
+                        (int(img.width * scale), int(img.height * scale))
+                    )
+                    buffer = io.BytesIO()
+                    img_resized.save(buffer, format=img_format)
+                    resized_data = buffer.getvalue()
+
+                return base64.b64encode(resized_data).decode("utf-8")
+
+            return base64.b64encode(image_data).decode("utf-8")
         elif isinstance(image_path, Image.Image):
-            buffered = io.BytesIO()
+            img = image_path
             # Preserve original format if possible, fallback to PNG
-            format = getattr(image_path, "format", "PNG") or "PNG"
-            image_path.save(buffered, format=format)
-            return base64.b64encode(buffered.getvalue()).decode("utf-8")
+            img_format = getattr(img, "format", "PNG") or "PNG"
+
+            # First try with original size
+            buffer = io.BytesIO()
+            img.save(buffer, format=img_format)
+            image_data = buffer.getvalue()
+
+            # Check if image needs resizing
+            if len(image_data) > MAX_IMAGE_SIZE:
+                # Start with 0.5 scaling
+                scale = 0.5
+                img_resized = img.resize(
+                    (int(img.width * scale), int(img.height * scale))
+                )
+
+                # Keep resizing if still too large
+                buffer = io.BytesIO()
+                img_resized.save(buffer, format=img_format)
+                resized_data = buffer.getvalue()
+
+                while len(resized_data) > MAX_IMAGE_SIZE and scale > 0.1:
+                    # Reduce scale further if still too large
+                    scale *= 0.8
+                    img_resized = img.resize(
+                        (int(img.width * scale), int(img.height * scale))
+                    )
+                    buffer = io.BytesIO()
+                    img_resized.save(buffer, format=img_format)
+                    resized_data = buffer.getvalue()
+
+                return base64.b64encode(resized_data).decode("utf-8")
+
+            return base64.b64encode(image_data).decode("utf-8")
         else:
             raise ValueError(f"Unsupported image format: {type(image_path)}")
 
