@@ -327,3 +327,20 @@ def test_deepseek_image(deepseek_provider):
     assert len(response) > 0
     assert "red".lower() in response.lower(), f"Expected response to contain 'red', got: {response}"
 """
+
+
+@pytest.mark.skipif(not os.getenv("GOOGLE_API_KEY"), reason="Google API key not found")
+def test_gemini_25_pro_preview(gemini_provider):
+    """Test the Gemini 2.5 Pro Preview model specifically"""
+    response = gemini_provider.call_ai(
+        messages=TEXT_MESSAGES,
+        temperature=0,
+        max_tokens=150,
+        model="gemini/models/gemini-2.5-pro-preview-05-06",
+        # model="gemini-2.5-pro-preview-05-06",
+    )
+    assert isinstance(response, str)
+    assert len(response) > 0
+    assert (
+        "TEST_RESPONSE_123" in response
+    ), f"Expected 'TEST_RESPONSE_123', got: {response}"
