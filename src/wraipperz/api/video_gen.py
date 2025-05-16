@@ -44,6 +44,19 @@ class VideoGenProvider(abc.ABC):
         pass
 
     @abc.abstractmethod
+    def video_to_video(
+        self,
+        video_url: str,
+        prompt: str,
+        modify_region: Optional[str] = None,
+        image_url: Optional[str] = None,
+        negative_prompt: Optional[str] = None,
+        **kwargs,
+    ) -> Dict[str, Any]:
+        """Generate a modified video using inpainting"""
+        pass
+
+    @abc.abstractmethod
     def get_video_status(self, video_id: int) -> Dict[str, Any]:
         """Get the status of a video generation job"""
         pass
@@ -215,6 +228,7 @@ class FalProvider(VideoGenProvider):
         "fal/magi-distilled",
         "fal/vidu",
         "fal/ltx-video-v095",
+        "fal/pika-swaps-v2",
     ]
 
     model_mapping = {
@@ -229,6 +243,7 @@ class FalProvider(VideoGenProvider):
         "fal/magi-distilled": "fal-ai/magi-distilled/image-to-video",
         "fal/vidu": "fal-ai/vidu/image-to-video",
         "fal/ltx-video-v095": "fal-ai/ltx-video-v095/image-to-video",
+        "fal/pika-swaps-v2": "fal-ai/pika/v2/pikaswaps",
     }
 
     def __init__(self, api_key=None):
@@ -528,6 +543,133 @@ class FalProvider(VideoGenProvider):
                 "request_id": video_id.get("request_id"),
             }
 
+    def _upload_or_get_video_url(self, video_path: Union[str, Path]) -> str:
+        """
+        Upload a local video file to fal.ai or return the URL if already a URL.
+
+        Args:
+            video_path: Path to local video file or URL
+
+        Returns:
+            URL to the video (either uploaded or the original URL)
+        """
+        # If it's already a URL, just return it
+        if isinstance(video_path, str) and (
+            video_path.startswith("http://") or video_path.startswith("https://")
+        ):
+            return video_path
+
+        # If it's a local file, upload it to fal.ai
+        path = Path(video_path)
+        if not path.exists():
+            raise ValueError(f"Video file not found: {video_path}")
+
+        # Upload the file to fal.ai storage
+        print(f"Uploading video file: {path}")
+        url = fal_client.upload_file(str(path))
+        print(f"Video uploaded successfully: {url}")
+
+        return url
+
+    def video_to_video(
+        self,
+        video_url: Union[str, Path],
+        prompt: str,
+        modify_region: str = None,
+        image_url: Union[str, Path] = None,
+        negative_prompt: Optional[str] = None,
+        seed: Optional[int] = None,
+        model_override: Optional[str] = None,
+        fal_model: Optional[str] = None,
+        **kwargs,
+    ) -> Dict[str, Any]:
+        """
+        Generate a modified video using Pika Swaps inpainting
+
+        Args:
+            video_url: URL or path to the input video file
+            prompt: Text prompt describing the modification
+            modify_region: Plaintext description of the object/region to modify
+            image_url: Optional URL or path to the image to swap with
+            negative_prompt: Optional negative prompt to guide the model
+            seed: Optional seed for the random number generator
+            model_override: Override the mapped model with a custom fal.ai endpoint
+            fal_model: Alias for model_override
+            **kwargs: Additional parameters to pass to the provider
+
+        Returns:
+            Dict with the request details
+        """
+        # Determine which fal.ai model to use
+        fal_endpoint = model_override or fal_model
+
+        if not fal_endpoint:
+            # Get the model mapping from our internal model name
+            model_name = kwargs.get("model", "fal/pika-swaps-v2")
+
+            # Check if the model name is already a full fal.ai endpoint path
+            if model_name.startswith("fal-ai/"):
+                fal_endpoint = model_name
+            else:
+                # Use our mapping
+                fal_endpoint = self.model_mapping.get(model_name)
+
+            if not fal_endpoint:
+                raise ValueError(f"Unknown model: {model_name}")
+
+        # Create request ID
+        request_id = f"wraipperz-fal-v2v-{str(uuid.uuid4())[:8]}"
+
+        # Handle local video file or URL
+        video_url_to_use = self._upload_or_get_video_url(video_url)
+
+        # Handle local image file or URL if provided
+        image_url_to_use = None
+        if image_url:
+            if isinstance(image_url, str) and (
+                image_url.startswith("http://") or image_url.startswith("https://")
+            ):
+                # Already a URL
+                image_url_to_use = image_url
+            else:
+                # Local file - convert to base64 or upload
+                image_url_to_use = self._encode_image_to_base64(image_url)
+
+        # Prepare arguments for Pika Swaps
+        arguments = {
+            "video_url": video_url_to_use,
+        }
+
+        # Add optional parameters if provided
+        if prompt:
+            arguments["prompt"] = prompt
+
+        if modify_region:
+            arguments["modify_region"] = modify_region
+
+        if image_url_to_use:
+            arguments["image_url"] = image_url_to_use
+
+        if negative_prompt:
+            arguments["negative_prompt"] = negative_prompt
+
+        if seed is not None:
+            arguments["seed"] = seed
+
+        # Include any other valid kwargs
+        for key, value in kwargs.items():
+            if key not in arguments and key not in ["model"]:
+                arguments[key] = value
+
+        # Submit the request to fal.ai
+        handler = fal_client.submit(
+            fal_endpoint,
+            arguments=arguments,
+        )
+
+        # Return immediately with the handler reference
+        return {"request_id": request_id, "fal_handler": handler, "status": "submitted"}
+
 
 class KlingAIProvider(VideoGenProvider):
     supported_models = ["kling/text-to-video", "kling/image-to-video"]
@@ -738,6 +880,20 @@ class KlingAIProvider(VideoGenProvider):
                     f.write(chunk)
 
         return output_path
+
+    def video_to_video(
+        self,
+        video_url: str,
+        prompt: str,
+        modify_region: Optional[str] = None,
+        image_url: Optional[str] = None,
+        negative_prompt: Optional[str] = None,
+        **kwargs,
+    ) -> Dict[str, Any]:
+        """Generate a modified video using inpainting - not yet supported by KlingAI"""
+        raise NotImplementedError(
+            "Video-to-video inpainting is not supported by KlingAI provider"
+        )
 
 
 class PixVerseProvider(VideoGenProvider):
@@ -1196,6 +1352,20 @@ class PixVerseProvider(VideoGenProvider):
 
         return output_path
 
+    def video_to_video(
+        self,
+        video_url: str,
+        prompt: str,
+        modify_region: Optional[str] = None,
+        image_url: Optional[str] = None,
+        negative_prompt: Optional[str] = None,
+        **kwargs,
+    ) -> Dict[str, Any]:
+        """Generate a modified video using inpainting - not yet supported by PixVerse"""
+        raise NotImplementedError(
+            "Video-to-video inpainting is not supported by PixVerse provider"
+        )
+
 
 class VideoGenManager:
     def __init__(self):
@@ -1241,6 +1411,36 @@ class VideoGenManager:
         # Add model to kwargs so it's available inside provider methods
         kwargs["model"] = model
         return provider.image_to_video(image_path, prompt, negative_prompt, **kwargs)
+
+    def generate_video_from_video(
+        self,
+        model: str,
+        video_url: str,
+        prompt: str,
+        modify_region: Optional[str] = None,
+        image_url: Optional[str] = None,
+        negative_prompt: Optional[str] = None,
+        **kwargs,
+    ) -> Dict[str, Any]:
+        """Generate a modified video using inpainting"""
+        provider = self.get_provider(model)
+        # Add model to kwargs so it's available inside provider methods
+        kwargs["model"] = model
+
+        # Check if provider supports video-to-video
+        if not hasattr(provider, "video_to_video"):
+            raise ValueError(
+                f"The provider for {model} doesn't support video-to-video operations"
+            )
+
+        return provider.video_to_video(
+            video_url=video_url,
+            prompt=prompt,
+            modify_region=modify_region,
+            image_url=image_url,
+            negative_prompt=negative_prompt,
+            **kwargs,
+        )
 
     def get_video_status(self, model: str, video_id: int) -> Dict[str, Any]:
         """Get the status of a video generation job"""
@@ -1546,3 +1746,73 @@ def download_video(
     """
     manager = VideoGenManagerSingleton.get_instance()
     return manager.download_video(model, video_url, output_path)
+
+
+def generate_video_from_video(
+    model: str,
+    video_url: str,
+    prompt: str,
+    modify_region: Optional[str] = None,
+    image_url: Optional[str] = None,
+    negative_prompt: Optional[str] = None,
+    wait_for_completion: bool = False,
+    output_path: Optional[Union[str, Path]] = None,
+    **kwargs,
+) -> Dict[str, Any]:
+    """
+    Modify a video using inpainting (like Pika Swaps).
+
+    Args:
+        model: The model to use (e.g., "fal/pika-swaps-v2")
+        video_url: URL of the input video
+        prompt: Text prompt describing the modification
+        modify_region: Plaintext description of the object/region to modify
+        image_url: Optional URL of the image to swap with
+        negative_prompt: Optional negative prompt to guide the model
+        wait_for_completion: Whether to wait for the video to finish generating
+        output_path: If provided, download the completed video to this path
+        **kwargs: Additional parameters to pass to the provider
+
+    Returns:
+        Dict with video generation details
+    """
+    # Get the manager instance
+    manager = VideoGenManagerSingleton.get_instance()
+
+    # Generate the video using the manager
+    result = manager.generate_video_from_video(
+        model=model,
+        video_url=video_url,
+        prompt=prompt,
+        modify_region=modify_region,
+        image_url=image_url,
+        negative_prompt=negative_prompt,
+        **kwargs,
+    )
+
+    if wait_for_completion or output_path:
+        # Always wait for completion if output_path is provided
+        try:
+            status = manager.wait_for_video_completion(
+                model,
+                result,  # Pass the entire result dict
+                polling_interval=kwargs.get("polling_interval", 5),
+                max_wait_time=kwargs.get("max_wait_time", 300),
+            )
+
+            # Update the result with status info
+            result.update({"status": status["status"], "url": status["url"]})
+
+            # Download the video if output_path is provided
+            if output_path:
+                downloaded_path = manager.download_video(
+                    model, status["url"], output_path
+                )
+                result["file_path"] = str(downloaded_path)
+        except Exception as e:
+            # Update result with error info
+            result.update({"status": "failed", "error": str(e)})
+            # Re-raise the exception so the user knows what happened
+            raise
+
+    return result
