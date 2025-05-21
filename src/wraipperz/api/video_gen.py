@@ -917,7 +917,7 @@ class PixVerseProvider(VideoGenProvider):
     def _extract_model_version(self, model_name):
         """Extract the version from the model name (e.g., '3.5' from 'pixverse/text-to-video-v3.5')"""
         if not model_name:
-            return "v4.0"  # Default fallback
+            return "v4"  # Default fallback to v4 (not v4.0)
 
         # For debugging
         print(f"Extracting version from model name: {model_name}")
@@ -931,14 +931,24 @@ class PixVerseProvider(VideoGenProvider):
             print(f"Detected v4.5 model: {model_name}")
             return "v4.5"
 
+        # Check for v4.0 and convert to v4
+        if "v4.0" in model_name:
+            print(f"Converting v4.0 model to v4: {model_name}")
+            return "v4"
+
         version_match = re.search(r"v(\d+\.\d+)$", model_name)
         if version_match:
             version = f"v{version_match.group(1)}"
             print(f"Matched version pattern: {version}")
-            return version  # Return with v prefix (e.g., 'v4.0')
 
-        print("No version pattern matched, using default v4.0")
-        return "v4.0"  # Default fallback if no version found
+            # Convert v4.0 to v4 for API compatibility
+            if version == "v4.0":
+                return "v4"
+
+            return version  # Return with v prefix (e.g., 'v3.5')
+
+        print("No version pattern matched, using default v4")
+        return "v4"  # Default fallback if no version found
 
     def upload_image(self, image_path: Union[str, Path, Image.Image]) -> int:
         """Upload an image to PixVerse and get an image ID"""
