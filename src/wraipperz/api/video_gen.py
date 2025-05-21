@@ -1520,8 +1520,8 @@ class VideoGenManager:
         provider = self.get_provider(model)
         start_time = time.time()
 
-        # Special handling for fal.ai which uses a different structure
-        if isinstance(video_id, dict) and "fal_handler" in video_id:
+        # Special handling for fal.ai provider
+        if isinstance(provider, FalProvider):
             while (time.time() - start_time) < max_wait_time:
                 status = provider.get_video_status(video_id)
 
