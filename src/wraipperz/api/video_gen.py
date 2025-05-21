@@ -902,6 +902,8 @@ class PixVerseProvider(VideoGenProvider):
         "pixverse/image-to-video-v3.5",
         "pixverse/image-to-video-v4.0",
         "pixverse/text-to-video-v4.0",
+        "pixverse/image-to-video-v4.5",
+        "pixverse/text-to-video-v4.5",
     ]
 
     def __init__(self, api_key=None):
@@ -924,10 +926,18 @@ class PixVerseProvider(VideoGenProvider):
             # Extract part after the slash
             model_name = model_name.split("/")[1]
 
+        # Explicitly check for v4.5 models
+        if "v4.5" in model_name:
+            print(f"Detected v4.5 model: {model_name}")
+            return "v4.5"
+
         version_match = re.search(r"v(\d+\.\d+)$", model_name)
         if version_match:
-            return f"v{version_match.group(1)}"  # Return with v prefix (e.g., 'v4.0')
+            version = f"v{version_match.group(1)}"
+            print(f"Matched version pattern: {version}")
+            return version  # Return with v prefix (e.g., 'v4.0')
 
+        print("No version pattern matched, using default v4.0")
         return "v4.0"  # Default fallback if no version found
 
     def upload_image(self, image_path: Union[str, Path, Image.Image]) -> int:
@@ -1027,6 +1037,11 @@ class PixVerseProvider(VideoGenProvider):
         """Generate a video from a text prompt using PixVerse API"""
         generate_url = f"{self.api_base}/video/text/generate"
 
+        # Log the input model name for debugging
+        print(
+            f"PixVerse text_to_video called with model: {kwargs.get('model', 'None specified')}"
+        )
+
         # Create a unique ai-trace-id for each request
         ai_trace_id = str(uuid.uuid4())
         headers = {
@@ -1066,11 +1081,15 @@ class PixVerseProvider(VideoGenProvider):
             if key not in payload:
                 payload[key] = value
 
+        # Print the final payload for debugging
+        print(f"PixVerse text_to_video payload: {json.dumps(payload, indent=2)}")
+
         # Convert payload to JSON string
         json_payload = json.dumps(payload)
 
         # Make API request
         try:
+            print(f"Making text_to_video request to: {generate_url}")
             response = requests.post(generate_url, headers=headers, data=json_payload)
 
             # Log response details for debugging
@@ -1083,6 +1102,8 @@ class PixVerseProvider(VideoGenProvider):
 
             response.raise_for_status()
             result = response.json()
+
+            print(f"PixVerse text_to_video response: {json.dumps(result, indent=2)}")
 
             if result.get("ErrCode") != 0:
                 raise ValueError(
@@ -1108,6 +1129,11 @@ class PixVerseProvider(VideoGenProvider):
         **kwargs,
     ) -> Dict[str, Any]:
         """Generate a video from an image using PixVerse API"""
+        # Log the input model name for debugging
+        print(
+            f"PixVerse image_to_video called with model: {kwargs.get('model', 'None specified')}"
+        )
+
         # First upload the image to get an img_id
         img_id = self.upload_image(image_path)
         print(f"Successfully uploaded image with ID: {img_id}")
@@ -1156,11 +1182,15 @@ class PixVerseProvider(VideoGenProvider):
             if key not in payload and key != "img_id":
                 payload[key] = value
 
+        # Print the final payload for debugging
+        print(f"PixVerse image_to_video payload: {json.dumps(payload, indent=2)}")
+
         # Convert payload to JSON string
         json_payload = json.dumps(payload)
 
         # Make API request
         try:
+            print(f"Making image_to_video request to: {generate_url}")
             response = requests.post(generate_url, headers=headers, data=json_payload)
 
             # Log response details for debugging
@@ -1173,6 +1203,8 @@ class PixVerseProvider(VideoGenProvider):
 
             response.raise_for_status()
             result = response.json()
+
+            print(f"PixVerse image_to_video response: {json.dumps(result, indent=2)}")
 
             if result.get("ErrCode") != 0:
                 raise ValueError(
