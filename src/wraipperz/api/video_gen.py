@@ -1053,11 +1053,11 @@ class PixVerseProvider(VideoGenProvider):
         # Extract model version from the model parameter
         model_version = self._extract_model_version(kwargs.get("model"))
 
-        # Prepare request payload
+        # Prepare request payload - ensure correct types according to API docs
         payload = {
             "model": model_version,
             "prompt": prompt,
-            "duration": duration,
+            "duration": int(duration),  # Force integer type
             "quality": quality,
             "motion_mode": motion_mode,
             "water_mark": False,
@@ -1074,11 +1074,15 @@ class PixVerseProvider(VideoGenProvider):
             payload["template_id"] = template_id
 
         if seed:
-            payload["seed"] = seed
+            payload["seed"] = int(seed)  # Force integer type
+
+        # Remove prompt_optimizer if it exists
+        if "prompt_optimizer" in kwargs:
+            kwargs.pop("prompt_optimizer")
 
         # Include any other valid kwargs
         for key, value in kwargs.items():
-            if key not in payload:
+            if key not in payload and key != "model":
                 payload[key] = value
 
         # Print the final payload for debugging
@@ -1154,12 +1158,12 @@ class PixVerseProvider(VideoGenProvider):
 
         print(f"Using model version: {model_version}")
 
-        # Prepare request payload
+        # Prepare request payload - ensure correct types according to API docs
         payload = {
             "model": model_version,
             "prompt": prompt,
             "img_id": img_id,
-            "duration": duration,
+            "duration": int(duration),  # Force integer type
             "quality": quality,
             "motion_mode": motion_mode,
             "water_mark": False,
@@ -1175,11 +1179,19 @@ class PixVerseProvider(VideoGenProvider):
             payload["template_id"] = template_id
 
         if seed:
-            payload["seed"] = seed
+            payload["seed"] = int(seed)  # Force integer type
+
+        # If aspect_ratio is provided, add it to payload
+        if "aspect_ratio" in kwargs:
+            payload["aspect_ratio"] = kwargs.pop("aspect_ratio")
+
+        # Remove prompt_optimizer if it exists
+        if "prompt_optimizer" in kwargs:
+            kwargs.pop("prompt_optimizer")
 
         # Include any other valid kwargs
         for key, value in kwargs.items():
-            if key not in payload and key != "img_id":
+            if key not in payload and key != "img_id" and key != "model":
                 payload[key] = value
 
         # Print the final payload for debugging
