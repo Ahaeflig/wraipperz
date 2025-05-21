@@ -79,6 +79,14 @@ class VideoGenProvider(abc.ABC):
         Returns:
             Tuple containing (PIL Image, size in bytes)
         """
+        # Convert RGBA or any mode with transparency to RGB first
+        if img.mode in ("RGBA", "LA") or (
+            img.mode == "P" and "transparency" in img.info
+        ):
+            provider_prefix = f"{provider_name} " if provider_name else ""
+            print(f"{provider_prefix}Converting image from {img.mode} mode to RGB")
+            img = img.convert("RGB")
+
         # Start with original quality
         quality = 95
         max_attempts = 10
