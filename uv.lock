@@ -2216,7 +2216,7 @@ wheels = [
 
 [[package]]
 name = "wraipperz"
-version = "0.1.28"
+version = "0.1.29"
 source = { editable = "." }
 dependencies = [
     { name = "anthropic" },

@@ -8,6 +8,8 @@ import base64
 import os
 import abc
 import requests
+import mimetypes
+import struct
 from openai import OpenAI
 from dotenv import load_dotenv
 from pathlib import Path
@@ -24,6 +26,8 @@ import subprocess
 import requests
 import soundfile as sf
 from cartesia import Cartesia
+from google import genai
+from google.genai import types as genai_types
 
 from .asr import create_asr_manager
 
@@ -1247,6 +1251,267 @@ class CartesiaTTSProvider(TTSProvider):
             print(f"Error listing voices: {e}")
 
 
+class GeminiTTSProvider(TTSProvider):
+    def __init__(self, api_key: str = None):
+        self.api_key = api_key or os.getenv("GEMINI_API_KEY")
+        self.client = genai.Client(api_key=self.api_key)
+        self.asr_manager = create_asr_manager()
+        self.available_voices = {
+            "Charon": {
+                "name": "Charon",
+                "description": "A Gemini prebuilt voice with a clear, natural tone.",
+                "labels": {
+                    "provider": "Gemini",
+                    "model": "gemini-2.5-pro-preview-tts",
+                    "gender": "neutral",
+                    "use_case": "general purpose",
+                },
+            },
+            "Milagros": {
+                "name": "Milagros",
+                "description": "A Gemini prebuilt voice with warmth and clarity.",
+                "labels": {
+                    "provider": "Gemini",
+                    "model": "gemini-2.5-pro-preview-tts",
+                    "gender": "female",
+                    "use_case": "general purpose",
+                },
+            },
+            "Jaemin": {
+                "name": "Jaemin",
+                "description": "A Gemini prebuilt voice with a distinct character.",
+                "labels": {
+                    "provider": "Gemini",
+                    "model": "gemini-2.5-pro-preview-tts",
+                    "gender": "male",
+                    "use_case": "general purpose",
+                },
+            },
+            "Kingsley": {
+                "name": "Kingsley",
+                "description": "A Gemini prebuilt voice with a composed, confident tone.",
+                "labels": {
+                    "provider": "Gemini",
+                    "model": "gemini-2.5-pro-preview-tts",
+                    "gender": "male",
+                    "use_case": "narration",
+                },
+            },
+            "Takeo": {
+                "name": "Takeo",
+                "description": "A Gemini prebuilt voice with a formal, precise delivery.",
+                "labels": {
+                    "provider": "Gemini",
+                    "model": "gemini-2.5-pro-preview-tts",
+                    "gender": "male",
+                    "use_case": "business",
+                },
+            },
+        }
+
+    def list_voices(self) -> list[dict]:
+        """Return list of available voices with their details"""
+        return [
+            {"name": k, "voice_id": k, **v} for k, v in self.available_voices.items()
+        ]
+
+    def generate_speech(
+        self,
+        text: str,
+        output_path: str,
+        voice: str = "Charon",
+        model: str = "gemini-2.5-pro-preview-tts",
+        temperature: float = 1.0,
+        instructions: str = None,
+        **kwargs,
+    ) -> dict | None:
+        """Generate speech using Google Gemini's TTS API
+
+        Args:
+            text: The text to convert to speech
+            output_path: Where to save the resulting audio file
+            voice: One of the available prebuilt voices (Charon, Milagros, Jaemin, etc.)
+            model: The TTS model to use (gemini-2.5-pro-preview-tts or gemini-2.5-flash-preview-tts)
+            temperature: Controls randomness in generation (0.0 to 1.0)
+            instructions: Optional instructions to guide the voice style (e.g., "Speak in a cheerful tone")
+            **kwargs: Additional parameters for future API options
+
+        Returns:
+            Dictionary with status and any additional information
+        """
+        try:
+            # Create content parts with instructions if provided
+            if instructions:
+                content_text = f"instruction: {instructions}\n\n{text}"
+            else:
+                content_text = text
+
+            contents = [
+                genai_types.Content(
+                    role="user",
+                    parts=[
+                        genai_types.Part.from_text(text=content_text),
+                    ],
+                ),
+            ]
+
+            # Configure voice and response format
+            generate_content_config = genai_types.GenerateContentConfig(
+                temperature=temperature,
+                response_modalities=["audio"],
+                speech_config=genai_types.SpeechConfig(
+                    voice_config=genai_types.VoiceConfig(
+                        prebuilt_voice_config=genai_types.PrebuiltVoiceConfig(
+                            voice_name=voice
+                        )
+                    )
+                ),
+            )
+
+            # Process the streaming response
+            audio_chunks = []
+            for chunk in self.client.models.generate_content_stream(
+                model=model,
+                contents=contents,
+                config=generate_content_config,
+            ):
+                if (
+                    chunk.candidates is None
+                    or chunk.candidates[0].content is None
+                    or chunk.candidates[0].content.parts is None
+                ):
+                    continue
+
+                if inline_data := chunk.candidates[0].content.parts[0].inline_data:
+                    # Get the data and mime type
+                    data_buffer = inline_data.data
+                    mime_type = inline_data.mime_type
+
+                    # Convert to WAV if needed
+                    if not mime_type.startswith("audio/"):
+                        continue
+
+                    # Check if we need to convert the audio format
+                    file_extension = mimetypes.guess_extension(mime_type)
+                    if file_extension is None:
+                        file_extension = ".wav"
+                        data_buffer = self._convert_to_wav(data_buffer, mime_type)
+
+                    audio_chunks.append(data_buffer)
+
+            # Combine all audio chunks
+            audio_data = b"".join(audio_chunks)
+
+            # Save the audio data to output file
+            with open(output_path, "wb") as f:
+                f.write(audio_data)
+
+            # Verify the file was written correctly
+            if not Path(output_path).exists() or Path(output_path).stat().st_size == 0:
+                raise TTSError("Failed to write audio file")
+
+            result = {
+                "status": "success",
+                "model": model,
+                "voice": voice,
+            }
+
+            # Generate alignment if requested
+            if kwargs.get("return_alignment", False):
+                temp_path = Path(output_path)
+                temp_file = (
+                    temp_path.parent / f"{temp_path.stem}_temp{temp_path.suffix}"
+                )
+
+                try:
+                    with open(temp_file, "wb") as f:
+                        f.write(audio_data)
+                    asr_result = self.asr_manager.transcribe(
+                        "openai", temp_file, language=kwargs.get("language")
+                    )
+                    result["alignment"] = asr_result.to_elevenlabs_alignment()
+                finally:
+                    temp_file.unlink(missing_ok=True)
+
+            return result
+
+        except Exception as e:
+            # Handle rate limit errors specifically
+            if "rate limit" in str(e).lower() or "quota" in str(e).lower():
+                raise TTSRateLimitError(f"Gemini API rate limit exceeded: {str(e)}")
+            # Handle other errors
+            raise TTSError(f"Gemini TTS generation failed: {str(e)}")
+
+    def _convert_to_wav(self, audio_data: bytes, mime_type: str) -> bytes:
+        """Generates a WAV file header for the given audio data and parameters.
+
+        Args:
+            audio_data: The raw audio data as a bytes object.
+            mime_type: Mime type of the audio data.
+
+        Returns:
+            A bytes object representing the WAV file with header.
+        """
+        parameters = self._parse_audio_mime_type(mime_type)
+        bits_per_sample = parameters["bits_per_sample"]
+        sample_rate = parameters["rate"]
+        num_channels = 1
+        data_size = len(audio_data)
+        bytes_per_sample = bits_per_sample // 8
+        block_align = num_channels * bytes_per_sample
+        byte_rate = sample_rate * block_align
+        chunk_size = 36 + data_size  # 36 bytes for header fields before data chunk size
+
+        # Create WAV header
+        header = struct.pack(
+            "<4sI4s4sIHHIIHH4sI",
+            b"RIFF",  # ChunkID
+            chunk_size,  # ChunkSize (total file size - 8 bytes)
+            b"WAVE",  # Format
+            b"fmt ",  # Subchunk1ID
+            16,  # Subchunk1Size (16 for PCM)
+            1,  # AudioFormat (1 for PCM)
+            num_channels,  # NumChannels
+            sample_rate,  # SampleRate
+            byte_rate,  # ByteRate
+            block_align,  # BlockAlign
+            bits_per_sample,  # BitsPerSample
+            b"data",  # Subchunk2ID
+            data_size,  # Subchunk2Size (size of audio data)
+        )
+        return header + audio_data
+
+    def _parse_audio_mime_type(self, mime_type: str) -> dict[str, int]:
+        """Parses bits per sample and rate from an audio MIME type string.
+
+        Args:
+            mime_type: The audio MIME type string (e.g., "audio/L16;rate=24000").
+
+        Returns:
+            A dictionary with "bits_per_sample" and "rate" keys.
+        """
+        bits_per_sample = 16
+        rate = 24000
+
+        # Extract rate from parameters
+        parts = mime_type.split(";")
+        for param in parts:
+            param = param.strip()
+            if param.lower().startswith("rate="):
+                try:
+                    rate_str = param.split("=", 1)[1]
+                    rate = int(rate_str)
+                except (ValueError, IndexError):
+                    pass  # Keep rate as default
+            elif param.startswith("audio/L"):
+                try:
+                    bits_per_sample = int(param.split("L", 1)[1])
+                except (ValueError, IndexError):
+                    pass  # Keep bits_per_sample as default
+
+        return {"bits_per_sample": bits_per_sample, "rate": rate}
+
+
 class TTSManager:
     def __init__(self):
         self.providers = {}
@@ -1476,6 +1741,8 @@ def create_tts_manager():
         manager.add_provider("minimaxi", MiniMaxiTTSProvider())
     if os.getenv("CARTESIA_API_KEY"):
         manager.add_provider("cartesia", CartesiaTTSProvider())
+    if os.getenv("GEMINI_API_KEY"):
+        manager.add_provider("gemini", GeminiTTSProvider())
     return manager
 
 

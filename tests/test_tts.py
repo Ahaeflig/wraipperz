@@ -9,6 +9,7 @@ import pytest
 from wraipperz.api.tts import (
     CartesiaTTSProvider,
     ElevenLabsTTSProvider,
+    GeminiTTSProvider,
     MiniMaxiTTSProvider,
     OpenAIRealtimeTTSProvider,
     OpenAITTSProvider,
@@ -330,6 +331,29 @@ def test_openai_realtime_provider_generate_speech():
         Path(output_path).unlink(missing_ok=True)
 
 
+@pytest.mark.skipif(not os.getenv("GEMINI_API_KEY"), reason="Gemini API key not found")
+def test_gemini_provider_generate_speech():
+    """Test Gemini TTS provider generate_speech method with actual API call"""
+    provider = GeminiTTSProvider()
+
+    with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as temp_file:
+        output_path = temp_file.name
+
+        _ = provider.generate_speech(
+            text="This is a test of the Gemini text to speech API.",
+            output_path=output_path,
+            voice="Charon",
+            model="gemini-2.5-pro-preview-tts",
+        )
+
+        # Verify file was created and has content
+        assert Path(output_path).exists()
+        assert Path(output_path).stat().st_size > 0
+
+        # Clean up
+        Path(output_path).unlink(missing_ok=True)
+
+
 def test_create_tts_manager():
     """Test the create_tts_manager factory function"""
     with patch.dict(
@@ -340,6 +364,7 @@ def test_create_tts_manager():
             "T2A_API_KEY": "test_minimaxi_key",
             "MINIMAXI_GROUP_ID": "test_group_id",
             "CARTESIA_API_KEY": "test_cartesia_key",
+            "GEMINI_API_KEY": "test_gemini_key",
         },
     ):
         manager = create_tts_manager()
@@ -350,6 +375,7 @@ def test_create_tts_manager():
         assert "elevenlabs" in manager.providers
         assert "minimaxi" in manager.providers
         assert "cartesia" in manager.providers
+        assert "gemini" in manager.providers
 
         # Check provider types
         assert isinstance(manager.providers["openai"], OpenAITTSProvider)
@@ -359,6 +385,7 @@ def test_create_tts_manager():
         assert isinstance(manager.providers["elevenlabs"], ElevenLabsTTSProvider)
         assert isinstance(manager.providers["minimaxi"], MiniMaxiTTSProvider)
         assert isinstance(manager.providers["cartesia"], CartesiaTTSProvider)
+        assert isinstance(manager.providers["gemini"], GeminiTTSProvider)
 
 
 @pytest.mark.skipif(not os.getenv("OPENAI_API_KEY"), reason="OpenAI API key not found")
