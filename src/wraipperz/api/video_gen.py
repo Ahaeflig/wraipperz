@@ -1011,15 +1011,16 @@ class PixVerseProvider(VideoGenProvider):
             headers = {"API-KEY": self.api_key, "Ai-trace-id": ai_trace_id}
 
             # Prepare the file for multipart upload
-            files = [
-                (
-                    "image",
-                    (file_path.name, open(file_path, "rb"), "application/octet-stream"),
-                )
-            ]
+            with open(file_path, "rb") as file_obj:
+                files = [
+                    (
+                        "image",
+                        (file_path.name, file_obj, "application/octet-stream"),
+                    )
+                ]
 
-            # Make the upload request
-            response = requests.post(upload_url, headers=headers, files=files)
+                # Make the upload request
+                response = requests.post(upload_url, headers=headers, files=files)
 
             # Debug logging
             if response.status_code != 200:
