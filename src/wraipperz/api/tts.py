@@ -1623,7 +1623,7 @@ class GeminiTTSProvider(TTSProvider):
         try:
             # Create content parts with instructions if provided
             if instructions:
-                content_text = f"instruction: {instructions}\n\n{text}"
+                content_text = f"{instructions}: {text}"
             else:
                 content_text = text
 
