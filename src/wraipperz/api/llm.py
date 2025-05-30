@@ -266,6 +266,8 @@ class AnthropicProvider(AIProvider):
         "anthropic/claude-3-sonnet-20240229",
         "anthropic/claude-2.1",
         "anthropic/claude-2.0",
+        "anthropic/claude-opus-4-20250514",
+        "anthropic/claude-sonnet-4-20250514",
     ]
 
     def __init__(self, api_key=None):

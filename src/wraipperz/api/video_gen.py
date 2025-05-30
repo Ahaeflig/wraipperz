@@ -1177,12 +1177,34 @@ class PixVerseProvider(VideoGenProvider):
 
         print(f"Using model version: {model_version}")
 
+        # Remove aspect_ratio if it exists
+        if "aspect_ratio" in kwargs:
+            kwargs.pop("aspect_ratio")
+
+        # Remove prompt_optimizer if it exists
+        if "prompt_optimizer" in kwargs:
+            kwargs.pop("prompt_optimizer")
+
+        # Validate duration
+        duration_int = int(duration)
+        if model_version == "v4" and duration_int not in [3, 5, 8]:
+            duration_int = 5
+            print(
+                f"Warning: Duration {duration_int} might not be supported for v4 model, using default duration 5"
+            )
+
+        if quality == "1080p" and duration_int == 8:
+            duration_int = 5
+            print(
+                "Warning: Quality 1080p is not supported for duration 8, using default duration 5"
+            )
+
         # Prepare request payload - ensure correct types according to API docs
         payload = {
             "model": model_version,
             "prompt": prompt,
             "img_id": img_id,
-            "duration": int(duration),  # Force integer type
+            "duration": duration_int,
             "quality": quality,
             "motion_mode": motion_mode,
             "water_mark": False,
@@ -1199,14 +1221,6 @@ class PixVerseProvider(VideoGenProvider):
 
         if seed:
             payload["seed"] = int(seed)  # Force integer type
-
-        # If aspect_ratio is provided, add it to payload
-        if "aspect_ratio" in kwargs:
-            payload["aspect_ratio"] = kwargs.pop("aspect_ratio")
-
-        # Remove prompt_optimizer if it exists
-        if "prompt_optimizer" in kwargs:
-            kwargs.pop("prompt_optimizer")
 
         # Include any other valid kwargs
         for key, value in kwargs.items():
