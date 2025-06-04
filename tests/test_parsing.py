@@ -240,3 +240,107 @@ def test_list_nested_object():
     assert "# Lines of each entry in the script in order." in yaml_example
     # assert "# The name of the character" in yaml_example
     # assert "# The text of the line" in yaml_example
+
+
+def test_nested_basemodel_without_explicit_example():
+    """Test YAML generation for a model with nested BaseModel in list without explicit example."""
+
+    class LineAnalysis(BaseModel):
+        """Analysis of a single dialogue line from video."""
+
+        action: str = Field(
+            json_schema_extra={
+                "example": "Character looks worried and fidgets with their hands",
+                "comment": "Description of the character's actions or expressions",
+            }
+        )
+
+        voice_type: str = Field(
+            json_schema_extra={
+                "example": "NORMAL",
+                "comment": "Voice type: VO for voice over, OFF for offscreen, WHISPER for whispers, or NORMAL for normal voices",
+            }
+        )
+
+        location: str = Field(
+            json_schema_extra={
+                "example": "Living room",
+                "comment": "The location where the dialogue takes place",
+            }
+        )
+
+        time_of_day: str = Field(
+            json_schema_extra={
+                "example": "DAY",
+                "comment": "Time of day (e.g., DAY, NIGHT, MORNING, etc.)",
+            }
+        )
+
+        translation: str = Field(
+            json_schema_extra={
+                "example": "I can't believe this is happening.",
+                "comment": "High-quality English translation of the dialogue",
+            }
+        )
+
+        scene_change: Optional[str] = Field(
+            default="",
+            json_schema_extra={
+                "example": "Characters move to the kitchen to prepare dinner",
+                "comment": "Brief description of scene change if any, empty if no scene change",
+            },
+        )
+
+    class VideoAnalysisResponse(BaseModel):
+        """Complete video analysis response containing all line analyses."""
+
+        lines: List[LineAnalysis] = Field(
+            json_schema_extra={
+                "comment": "Analysis for each line of dialogue in the script, in order"
+            }
+        )
+
+    yaml_example = pydantic_to_yaml_example(VideoAnalysisResponse)
+    print(f"\nGenerated YAML:\n{yaml_example}")
+
+    parsed_data = yaml.safe_load(yaml_example)
+    print(f"\nParsed data:\n{parsed_data}")
+
+    # Verify the structure of the generated YAML
+    assert "lines" in parsed_data
+    assert isinstance(parsed_data["lines"], list)
+    assert len(parsed_data["lines"]) > 0
+
+    # Verify that we don't get null values
+    first_line = parsed_data["lines"][0]
+    assert first_line is not None
+    assert isinstance(first_line, dict)
+
+    # Verify the nested object properties have actual values, not null
+    assert "action" in first_line
+    assert first_line["action"] is not None
+    assert (
+        first_line["action"] == "Character looks worried and fidgets with their hands"
+    )
+
+    assert "voice_type" in first_line
+    assert first_line["voice_type"] == "NORMAL"
+
+    assert "location" in first_line
+    assert first_line["location"] == "Living room"
+
+    assert "time_of_day" in first_line
+    assert first_line["time_of_day"] == "DAY"
+
+    assert "translation" in first_line
+    assert first_line["translation"] == "I can't believe this is happening."
+
+    assert "scene_change" in first_line
+    assert (
+        first_line["scene_change"] == "Characters move to the kitchen to prepare dinner"
+    )
+
+    # Check for comments in the generated YAML
+    assert (
+        "# Analysis for each line of dialogue in the script, in order" in yaml_example
+    )

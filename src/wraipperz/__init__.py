@@ -9,7 +9,7 @@ from .api.video_gen import (
     wait_for_video_completion,
     download_video,
 )
-from .parsing import find_yaml, pydantic_to_yaml_example
+from .parsing import find_yaml, pydantic_to_yaml_example, pydantic_to_yaml
 
 __all__ = [
     "call_ai",
@@ -18,6 +18,7 @@ __all__ = [
     "MessageBuilder",
     "pydantic_to_yaml_example",
     "find_yaml",
+    "pydantic_to_yaml",
     "create_tts_manager",
     "create_asr_manager",
     "generate",
