@@ -7,6 +7,7 @@ import numpy as np
 
 from wraipperz.api.llm import (
     AnthropicProvider,
+    BedrockProvider,
     DeepSeekProvider,
     GeminiProvider,
     OpenAIProvider,
@@ -61,6 +62,13 @@ def gemini_provider():
 @pytest.fixture
 def deepseek_provider():
     return DeepSeekProvider()
+
+
+@pytest.fixture
+def bedrock_provider():
+    """Create BedrockProvider with region from environment or default to us-east-1"""
+    region = os.getenv("AWS_DEFAULT_REGION", "us-east-1")
+    return BedrockProvider(region_name=region)
 
 
 @pytest.fixture(autouse=True)
@@ -176,6 +184,47 @@ COMPLEX_MIXED_MESSAGES = [
         ],
     },
 ]
+
+
+@pytest.mark.skipif(
+    not os.getenv("DEEPSEEK_API_KEY"), reason="Deepseek API key not found"
+)
+def test_deepseek_text(deepseek_provider):
+    response = deepseek_provider.call_ai(
+        messages=TEXT_MESSAGES, temperature=0, max_tokens=150, model="deepseek-chat"
+    )
+    assert isinstance(response, str)
+    assert len(response) > 0
+    assert (
+        "TEST_RESPONSE_123" in response
+    ), f"Expected 'TEST_RESPONSE_123', got: {response}"
+
+
+@pytest.mark.skipif(
+    not (
+        (os.getenv("AWS_ACCESS_KEY_ID") and os.getenv("AWS_SECRET_ACCESS_KEY"))
+        or os.getenv("AWS_PROFILE")
+        or os.getenv("AWS_DEFAULT_REGION")
+    ),
+    reason="AWS credentials not found",
+)
+def test_bedrock_text(bedrock_provider):
+    """Test Bedrock provider with Claude model"""
+    # Use APAC inference profile if in ap-northeast-1, otherwise use direct model ID
+    region = os.getenv("AWS_DEFAULT_REGION", "us-east-1")
+    if region == "ap-northeast-1":
+        model = "bedrock/apac.anthropic.claude-3-haiku-20240307-v1:0"
+    else:
+        model = "bedrock/anthropic.claude-3-haiku-20240307-v1:0"
+
+    response = bedrock_provider.call_ai(
+        messages=TEXT_MESSAGES, temperature=0, max_tokens=150, model=model
+    )
+    assert isinstance(response, str)
+    assert len(response) > 0
+    assert (
+        "TEST_RESPONSE_123" in response
+    ), f"Expected 'TEST_RESPONSE_123', got: {response}"
 
 
 @pytest.mark.skipif(not os.getenv("GOOGLE_API_KEY"), reason="Google API key not found")
@@ -303,30 +352,6 @@ def test_gemini_system_prompt_only():
     )
 
     assert "HELLO" in response, f"Expected 'HELLO', got: {response}"
-
-
-@pytest.mark.skipif(
-    not os.getenv("DEEPSEEK_API_KEY"), reason="Deepseek API key not found"
-)
-def test_deepseek_text(deepseek_provider):
-    response = deepseek_provider.call_ai(
-        messages=TEXT_MESSAGES, temperature=0, max_tokens=150, model="deepseek-chat"
-    )
-    assert isinstance(response, str)
-    assert len(response) > 0
-    assert (
-        "TEST_RESPONSE_123" in response
-    ), f"Expected 'TEST_RESPONSE_123', got: {response}"
-
-
-""" doesn't support aimges
-@pytest.mark.skipif(not os.getenv("DEEPSEEK_API_KEY"), reason="Deepseek API key not found")
-def test_deepseek_image(deepseek_provider):
-    response = deepseek_provider.call_ai(messages=IMAGE_MESSAGES, temperature=0, max_tokens=150, model="deepseek-chat")
-    assert isinstance(response, str)
-    assert len(response) > 0
-    assert "red".lower() in response.lower(), f"Expected response to contain 'red', got: {response}"
-"""
 
 
 @pytest.mark.skipif(not os.getenv("GOOGLE_API_KEY"), reason="Google API key not found")

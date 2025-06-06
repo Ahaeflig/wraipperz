@@ -1,6 +1,7 @@
 import abc
 import base64
 import io
+import json
 import mimetypes
 import os
 
@@ -31,6 +32,18 @@ from tenacity import (
     stop_after_attempt,
     wait_exponential,
 )
+
+# AWS Bedrock imports
+try:
+    import boto3
+    from botocore.exceptions import BotoCoreError, ClientError
+
+    BEDROCK_AVAILABLE = True
+except ImportError:
+    BEDROCK_AVAILABLE = False
+    boto3 = None
+    BotoCoreError = Exception
+    ClientError = Exception
 
 from .messages import Message
 
@@ -714,7 +727,6 @@ class GeminiProvider(AIProvider):
         "gemini/models/gemma-3-27b-it",
         "gemini/models/gemma-3-4b-it",
         "gemini/models/gemma-3n-e4b-it",
-        "gemini/models/learnlm-2.0-flash-experimental",
         "genai/models/gemini-1.0-pro-vision-latest",
         "genai/models/gemini-1.5-flash",
         "genai/models/gemini-1.5-flash-001",
@@ -1133,6 +1145,467 @@ class DeepSeekProvider(AIProvider):
             raise e
 
 
+class BedrockProvider(AIProvider):
+    """AWS Bedrock provider supporting multiple model families"""
+
+    supported_models = [
+        # Anthropic Claude Models - Direct IDs
+        "bedrock/anthropic.claude-3-haiku-20240307-v1:0",
+        "bedrock/anthropic.claude-3-opus-20240229-v1:0",
+        "bedrock/anthropic.claude-3-sonnet-20240229-v1:0",
+        "bedrock/anthropic.claude-3-5-haiku-20241022-v1:0",
+        "bedrock/anthropic.claude-3-5-sonnet-20241022-v2:0",
+        "bedrock/anthropic.claude-3-5-sonnet-20240620-v1:0",
+        "bedrock/anthropic.claude-3-7-sonnet-20250219-v1:0",
+        "bedrock/anthropic.claude-opus-4-20250514-v1:0",
+        "bedrock/anthropic.claude-sonnet-4-20250514-v1:0",
+        "bedrock/anthropic.claude-v2:1",
+        "bedrock/anthropic.claude-v2",
+        "bedrock/anthropic.claude-instant-v1",
+        # Anthropic Claude Models - APAC Inference Profiles
+        "bedrock/apac.anthropic.claude-3-haiku-20240307-v1:0",
+        "bedrock/apac.anthropic.claude-3-sonnet-20240229-v1:0",
+        "bedrock/apac.anthropic.claude-3-5-sonnet-20240620-v1:0",
+        "bedrock/apac.anthropic.claude-3-5-sonnet-20241022-v2:0",
+        "bedrock/apac.anthropic.claude-3-7-sonnet-20250219-v1:0",
+        "bedrock/apac.anthropic.claude-sonnet-4-20250514-v1:0",
+        # Anthropic Claude Models - US Inference Profiles
+        "bedrock/us.anthropic.claude-3-haiku-20240307-v1:0",
+        "bedrock/us.anthropic.claude-3-opus-20240229-v1:0",
+        "bedrock/us.anthropic.claude-3-sonnet-20240229-v1:0",
+        "bedrock/us.anthropic.claude-3-5-haiku-20241022-v1:0",
+        "bedrock/us.anthropic.claude-3-5-sonnet-20241022-v2:0",
+        "bedrock/us.anthropic.claude-3-5-sonnet-20240620-v1:0",
+        "bedrock/us.anthropic.claude-3-7-sonnet-20250219-v1:0",
+        "bedrock/us.anthropic.claude-opus-4-20250514-v1:0",
+        "bedrock/us.anthropic.claude-sonnet-4-20250514-v1:0",
+        # Anthropic Claude Models - EU Inference Profiles
+        "bedrock/eu.anthropic.claude-3-haiku-20240307-v1:0",
+        "bedrock/eu.anthropic.claude-3-opus-20240229-v1:0",
+        "bedrock/eu.anthropic.claude-3-sonnet-20240229-v1:0",
+        "bedrock/eu.anthropic.claude-3-5-haiku-20241022-v1:0",
+        "bedrock/eu.anthropic.claude-3-5-sonnet-20241022-v2:0",
+        "bedrock/eu.anthropic.claude-3-5-sonnet-20240620-v1:0",
+        "bedrock/eu.anthropic.claude-3-7-sonnet-20250219-v1:0",
+        "bedrock/eu.anthropic.claude-opus-4-20250514-v1:0",
+        "bedrock/eu.anthropic.claude-sonnet-4-20250514-v1:0",
+        # Amazon Nova Models
+        "bedrock/amazon.nova-lite-v1:0",
+        "bedrock/amazon.nova-micro-v1:0",
+        "bedrock/amazon.nova-pro-v1:0",
+        "bedrock/amazon.nova-premier-v1:0",
+        # Amazon Titan Models
+        "bedrock/amazon.titan-text-express-v1",
+        "bedrock/amazon.titan-text-lite-v1",
+        "bedrock/amazon.titan-text-premier-v1:0",
+        # Meta Llama Models
+        "bedrock/meta.llama3-8b-instruct-v1:0",
+        "bedrock/meta.llama3-70b-instruct-v1:0",
+        "bedrock/meta.llama3-1-8b-instruct-v1:0",
+        "bedrock/meta.llama3-1-70b-instruct-v1:0",
+        "bedrock/meta.llama3-1-405b-instruct-v1:0",
+        "bedrock/meta.llama3-2-1b-instruct-v1:0",
+        "bedrock/meta.llama3-2-3b-instruct-v1:0",
+        "bedrock/meta.llama3-2-11b-instruct-v1:0",
+        "bedrock/meta.llama3-2-90b-instruct-v1:0",
+        "bedrock/meta.llama3-3-70b-instruct-v1:0",
+        "bedrock/meta.llama4-scout-17b-instruct-v1:0",
+        "bedrock/meta.llama4-maverick-17b-instruct-v1:0",
+        # Cohere Models
+        "bedrock/cohere.command-r-v1:0",
+        "bedrock/cohere.command-r-plus-v1:0",
+        "bedrock/cohere.command-text-v14",
+        "bedrock/cohere.command-light-text-v14",
+        # Mistral Models
+        "bedrock/mistral.mistral-7b-instruct-v0:2",
+        "bedrock/mistral.mistral-large-2402-v1:0",
+        "bedrock/mistral.mistral-large-2407-v1:0",
+        "bedrock/mistral.mistral-small-2402-v1:0",
+        "bedrock/mistral.mixtral-8x7b-instruct-v0:1",
+        "bedrock/mistral.pixtral-large-2502-v1:0",
+        # AI21 Labs Models
+        "bedrock/ai21.jamba-1-5-large-v1:0",
+        "bedrock/ai21.jamba-1-5-mini-v1:0",
+        "bedrock/ai21.jamba-instruct-v1:0",
+        # DeepSeek Models
+        "bedrock/deepseek.r1-v1:0",
+        # Writer Models
+        "bedrock/writer.palmyra-x4-v1:0",
+        "bedrock/writer.palmyra-x5-v1:0",
+        # Support for ARN-based inference profiles (pattern matching)
+        # This allows for any ARN format: arn:aws:bedrock:region:account:inference-profile/model
+    ]
+
+    def __init__(
+        self,
+        region_name="us-east-1",
+        aws_access_key_id=None,
+        aws_secret_access_key=None,
+    ):
+        if not BEDROCK_AVAILABLE:
+            raise ImportError(
+                "boto3 is required for BedrockProvider. Install with: pip install boto3"
+            )
+
+        # Set up AWS credentials and region
+        kwargs = {"region_name": region_name}
+        if aws_access_key_id:
+            kwargs["aws_access_key_id"] = aws_access_key_id
+        if aws_secret_access_key:
+            kwargs["aws_secret_access_key"] = aws_secret_access_key
+
+        # Use environment variables or default credential chain if not provided
+        if not aws_access_key_id and not aws_secret_access_key:
+            if os.getenv("AWS_ACCESS_KEY_ID") and os.getenv("AWS_SECRET_ACCESS_KEY"):
+                kwargs["aws_access_key_id"] = os.getenv("AWS_ACCESS_KEY_ID")
+                kwargs["aws_secret_access_key"] = os.getenv("AWS_SECRET_ACCESS_KEY")
+
+        self.bedrock_runtime = boto3.client("bedrock-runtime", **kwargs)
+        self.region_name = region_name
+
+    def _extract_model_from_arn(self, arn):
+        """Extract the model identifier from an ARN"""
+        if not arn.startswith("arn:aws:bedrock:"):
+            return arn
+
+        # ARN format: arn:aws:bedrock:region:account:inference-profile/model-id
+        parts = arn.split("/")
+        if len(parts) >= 2:
+            return parts[-1]  # Get the model-id part
+        return arn
+
+    def _get_model_family(self, model_id):
+        """Determine the model family from the model ID"""
+        # Handle ARN format
+        if model_id.startswith("arn:aws:bedrock:"):
+            base_model = self._extract_model_from_arn(model_id)
+        # Handle inference profiles (strip region prefix)
+        elif model_id.startswith(("apac.", "us.", "eu.")):
+            base_model = model_id.split(".", 1)[1]  # Remove region prefix
+        else:
+            base_model = model_id
+
+        if "anthropic" in base_model:
+            return "anthropic"
+        elif "amazon.nova" in base_model:
+            return "nova"
+        elif "amazon.titan" in base_model:
+            return "titan"
+        elif "meta.llama" in base_model:
+            return "llama"
+        elif "cohere" in base_model:
+            return "cohere"
+        elif "mistral" in base_model:
+            return "mistral"
+        elif "ai21" in base_model:
+            return "ai21"
+        elif "deepseek" in base_model:
+            return "deepseek"
+        elif "writer" in base_model:
+            return "writer"
+        else:
+            return "unknown"
+
+    def _is_inference_profile(self, model_id):
+        """Check if the model ID is an inference profile"""
+        return (
+            model_id.startswith(("apac.", "us.", "eu."))
+            or "arn:aws:bedrock" in model_id
+        )
+
+    def _prepare_anthropic_request(self, messages, max_tokens, temperature, **kwargs):
+        """Prepare request for Anthropic Claude models using Messages API"""
+        system_content = ""
+        user_messages = []
+
+        for message in messages:
+            if message["role"] == "system":
+                # For Bedrock, system should be a simple string, not an array
+                if system_content:
+                    system_content += "\n" + message["content"]
+                else:
+                    system_content = message["content"]
+            else:
+                if isinstance(message["content"], str):
+                    user_messages.append(
+                        {
+                            "role": message["role"],
+                            "content": [{"type": "text", "text": message["content"]}],
+                        }
+                    )
+                elif isinstance(message["content"], list):
+                    prepared_content = []
+                    for item in message["content"]:
+                        if isinstance(item, dict):
+                            if item.get("type") == "text":
+                                prepared_content.append(
+                                    {"type": "text", "text": item["text"]}
+                                )
+                            elif item.get("type") == "image_url":
+                                # Handle image for Bedrock
+                                image_url = item["image_url"]["url"]
+                                if image_url.startswith(("http://", "https://")):
+                                    # Download image for processing
+                                    response = requests.get(image_url)
+                                    response.raise_for_status()
+                                    image_data = base64.b64encode(
+                                        response.content
+                                    ).decode("utf-8")
+                                else:
+                                    # Local file
+                                    with open(image_url, "rb") as img_file:
+                                        image_data = base64.b64encode(
+                                            img_file.read()
+                                        ).decode("utf-8")
+
+                                prepared_content.append(
+                                    {
+                                        "type": "image",
+                                        "source": {
+                                            "type": "base64",
+                                            "media_type": "image/jpeg",
+                                            "data": image_data,
+                                        },
+                                    }
+                                )
+                    user_messages.append(
+                        {"role": message["role"], "content": prepared_content}
+                    )
+
+        request_body = {
+            "anthropic_version": "bedrock-2023-05-31",
+            "max_tokens": max_tokens,
+            "temperature": temperature,
+            "messages": user_messages
+            or [{"role": "user", "content": [{"type": "text", "text": "Hello"}]}],
+        }
+
+        if system_content:
+            request_body["system"] = system_content
+
+        # Add any additional kwargs
+        request_body.update(
+            {k: v for k, v in kwargs.items() if k not in ["anthropic_version"]}
+        )
+
+        return request_body
+
+    def _prepare_titan_request(self, messages, max_tokens, temperature, **kwargs):
+        """Prepare request for Amazon Titan models"""
+        # Combine all messages into a single prompt for Titan
+        prompt = ""
+        for message in messages:
+            role = message["role"].capitalize()
+            content = message["content"]
+            if isinstance(content, list):
+                # Extract text from content list
+                text_parts = [
+                    item["text"] for item in content if item.get("type") == "text"
+                ]
+                content = " ".join(text_parts)
+            prompt += f"{role}: {content}\n"
+
+        request_body = {
+            "inputText": prompt,
+            "textGenerationConfig": {
+                "maxTokenCount": max_tokens,
+                "temperature": temperature,
+                "topP": kwargs.get("top_p", 0.9),
+                "stopSequences": kwargs.get("stop_sequences", []),
+            },
+        }
+        return request_body
+
+    def _prepare_llama_request(self, messages, max_tokens, temperature, **kwargs):
+        """Prepare request for Meta Llama models"""
+        # Format prompt for Llama
+        prompt = ""
+        for message in messages:
+            role = message["role"]
+            content = message["content"]
+            if isinstance(content, list):
+                text_parts = [
+                    item["text"] for item in content if item.get("type") == "text"
+                ]
+                content = " ".join(text_parts)
+
+            if role == "system":
+                prompt += f"<|begin_of_text|><|start_header_id|>system<|end_header_id|>\n{content}<|eot_id|>"
+            elif role == "user":
+                prompt += (
+                    f"<|start_header_id|>user<|end_header_id|>\n{content}<|eot_id|>"
+                )
+            elif role == "assistant":
+                prompt += f"<|start_header_id|>assistant<|end_header_id|>\n{content}<|eot_id|>"
+
+        prompt += "<|start_header_id|>assistant<|end_header_id|>\n"
+
+        request_body = {
+            "prompt": prompt,
+            "max_gen_len": max_tokens,
+            "temperature": temperature,
+            "top_p": kwargs.get("top_p", 0.9),
+        }
+        return request_body
+
+    def _prepare_cohere_request(self, messages, max_tokens, temperature, **kwargs):
+        """Prepare request for Cohere models"""
+        # Extract the last user message as the prompt
+        prompt = ""
+        chat_history = []
+
+        for i, message in enumerate(messages):
+            content = message["content"]
+            if isinstance(content, list):
+                text_parts = [
+                    item["text"] for item in content if item.get("type") == "text"
+                ]
+                content = " ".join(text_parts)
+
+            if message["role"] == "user" and i == len(messages) - 1:
+                prompt = content
+            elif message["role"] in ["user", "assistant"]:
+                chat_history.append(
+                    {
+                        "role": "USER" if message["role"] == "user" else "CHATBOT",
+                        "message": content,
+                    }
+                )
+
+        request_body = {
+            "message": prompt,
+            "max_tokens": max_tokens,
+            "temperature": temperature,
+            "chat_history": chat_history,
+            "p": kwargs.get("top_p", 0.9),
+            "k": kwargs.get("top_k", 0),
+        }
+        return request_body
+
+    def _prepare_generic_request(self, messages, max_tokens, temperature, **kwargs):
+        """Generic request preparation for other model families"""
+        # Simple prompt-based approach
+        prompt = ""
+        for message in messages:
+            role = message["role"].capitalize()
+            content = message["content"]
+            if isinstance(content, list):
+                text_parts = [
+                    item["text"] for item in content if item.get("type") == "text"
+                ]
+                content = " ".join(text_parts)
+            prompt += f"{role}: {content}\n"
+
+        prompt += "Assistant:"
+
+        request_body = {
+            "prompt": prompt,
+            "max_tokens": max_tokens,
+            "temperature": temperature,
+        }
+        request_body.update(kwargs)
+        return request_body
+
+    def call_ai(
+        self,
+        messages,
+        temperature,
+        max_tokens,
+        model="bedrock/anthropic.claude-3-5-sonnet-20240620-v1:0",
+        **kwargs,
+    ):
+        try:
+            # Extract model ID from prefixed format
+            model_id = model.replace("bedrock/", "")
+            model_family = self._get_model_family(model_id)
+
+            # Prepare request based on model family
+            if model_family == "anthropic":
+                request_body = self._prepare_anthropic_request(
+                    messages, max_tokens, temperature, **kwargs
+                )
+            elif model_family in ["nova", "titan"]:
+                request_body = self._prepare_titan_request(
+                    messages, max_tokens, temperature, **kwargs
+                )
+            elif model_family == "llama":
+                request_body = self._prepare_llama_request(
+                    messages, max_tokens, temperature, **kwargs
+                )
+            elif model_family == "cohere":
+                request_body = self._prepare_cohere_request(
+                    messages, max_tokens, temperature, **kwargs
+                )
+            else:
+                request_body = self._prepare_generic_request(
+                    messages, max_tokens, temperature, **kwargs
+                )
+
+            # Make the API call
+            response = self.bedrock_runtime.invoke_model(
+                modelId=model_id,
+                body=json.dumps(request_body),
+                contentType="application/json",
+                accept="application/json",
+            )
+
+            # Parse response based on model family
+            response_body = json.loads(response["body"].read())
+
+            if model_family == "anthropic":
+                return response_body["content"][0]["text"]
+            elif model_family in ["nova", "titan"]:
+                return response_body["results"][0]["outputText"]
+            elif model_family == "llama":
+                return response_body["generation"]
+            elif model_family == "cohere":
+                return response_body["text"]
+            else:
+                # Try common response formats
+                if "text" in response_body:
+                    return response_body["text"]
+                elif "content" in response_body:
+                    return response_body["content"]
+                elif "generation" in response_body:
+                    return response_body["generation"]
+                else:
+                    return str(response_body)
+
+        except (ClientError, BotoCoreError) as e:
+            raise e
+        except Exception as e:
+            raise e
+
+    async def call_ai_async(
+        self,
+        messages,
+        temperature,
+        max_tokens,
+        model="bedrock/anthropic.claude-3-5-sonnet-20240620-v1:0",
+        **kwargs,
+    ):
+        # AWS Bedrock doesn't have native async support in boto3, so we'll use the sync version
+        # In a production environment, you might want to use asyncio.run_in_executor
+        return self.call_ai(messages, temperature, max_tokens, model, **kwargs)
+
+    def generate(self, messages, temperature, max_tokens, model=None, **kwargs):
+        # Check if model supports image generation
+        if model and any(
+            x in model for x in ["nova-canvas", "titan-image", "stable-diffusion"]
+        ):
+            # Handle image generation models
+            raise NotImplementedError(
+                "Image generation through Bedrock not yet implemented"
+            )
+        else:
+            raise NotImplementedError("This provider does not support image generation")
+
+    async def generate_async(
+        self, messages, temperature, max_tokens, model=None, **kwargs
+    ):
+        return self.generate(messages, temperature, max_tokens, model, **kwargs)
+
+
 class AIManager:
     def __init__(self):
         self.providers = {}
@@ -1144,6 +1617,15 @@ class AIManager:
         for provider in self.providers.values():
             if model in provider.supported_models:
                 return provider
+
+            # Special handling for BedrockProvider with ARN-based inference profiles
+            if (
+                hasattr(provider, "__class__")
+                and provider.__class__.__name__ == "BedrockProvider"
+            ):
+                if model.startswith("bedrock/arn:aws:bedrock:"):
+                    return provider
+
         raise ValueError(f"No provider found for model: {model}")
 
     def call_ai(self, messages, temperature, max_tokens, model, **kwargs):
@@ -1382,6 +1864,20 @@ class AIManagerSingleton:
                     cls._instance.add_provider(DeepSeekProvider())
                 except Exception as e:
                     print(f"Error adding DeepSeek provider: {e}")
+
+            # Add Bedrock provider if boto3 is available and AWS credentials are set
+            if BEDROCK_AVAILABLE and (
+                (os.getenv("AWS_ACCESS_KEY_ID") and os.getenv("AWS_SECRET_ACCESS_KEY"))
+                or os.getenv("AWS_PROFILE")
+                or os.getenv("AWS_DEFAULT_REGION")
+            ):
+                try:
+                    bedrock_region = os.getenv("AWS_DEFAULT_REGION", "us-east-1")
+                    cls._instance.add_provider(
+                        BedrockProvider(region_name=bedrock_region)
+                    )
+                except Exception as e:
+                    print(f"Error adding Bedrock provider: {e}")
 
             if os.getenv("LMSTUDIO_IP") and os.getenv("LMSTUDIO_PORT"):
                 try:
