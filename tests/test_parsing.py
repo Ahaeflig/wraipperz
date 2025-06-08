@@ -347,11 +347,7 @@ def test_nested_basemodel_without_explicit_example():
 
 
 def test_nested_object_comments_bug():
-    """Test that comments from nested BaseModel objects are included in generated YAML.
-    
-    This test should FAIL with the current implementation to demonstrate the bug
-    where nested BaseModel objects' field comments are not included in the YAML output.
-    """
+    """Test that comments from nested BaseModel objects are included in generated YAML."""
     
     class NestedModel(BaseModel):
         nested_field: str = Field(
