@@ -238,8 +238,8 @@ def test_list_nested_object():
 
     # Check for comments in the generated YAML
     assert "# Lines of each entry in the script in order." in yaml_example
-    # assert "# The name of the character" in yaml_example
-    # assert "# The text of the line" in yaml_example
+    assert "# The name of the character" in yaml_example
+    assert "# The text of the line" in yaml_example
 
 
 def test_nested_basemodel_without_explicit_example():
@@ -344,3 +344,156 @@ def test_nested_basemodel_without_explicit_example():
     assert (
         "# Analysis for each line of dialogue in the script, in order" in yaml_example
     )
+
+
+def test_nested_object_comments_bug():
+    """Test that comments from nested BaseModel objects are included in generated YAML.
+    
+    This test should FAIL with the current implementation to demonstrate the bug
+    where nested BaseModel objects' field comments are not included in the YAML output.
+    """
+    
+    class NestedModel(BaseModel):
+        nested_field: str = Field(
+            json_schema_extra={
+                "example": "nested value",
+                "comment": "This is a comment from the nested model"
+            }
+        )
+        another_nested_field: int = Field(
+            json_schema_extra={
+                "example": 42,
+                "comment": "Another comment from nested model"
+            }
+        )
+    
+    class ParentModel(BaseModel):
+        parent_field: str = Field(
+            json_schema_extra={
+                "example": "parent value", 
+                "comment": "This is a comment from the parent model"
+            }
+        )
+        nested: NestedModel = Field(
+            json_schema_extra={
+                "comment": "This is a comment about the nested object field"
+            }
+        )
+    
+    yaml_example = pydantic_to_yaml_example(ParentModel)
+    print(f"\nGenerated YAML:\n{yaml_example}")
+    
+    # Parent level comments should be present (this works currently)
+    assert "# This is a comment from the parent model" in yaml_example
+    assert "# This is a comment about the nested object field" in yaml_example
+    
+    # These assertions should FAIL with current implementation - nested object comments missing
+    assert "# This is a comment from the nested model" in yaml_example, \
+        "Comments from nested BaseModel fields are not included in YAML output"
+    assert "# Another comment from nested model" in yaml_example, \
+        "Comments from nested BaseModel fields are not included in YAML output"
+
+
+def test_deeply_nested_object_comments_bug():
+    """Test that comments from deeply nested BaseModel objects are included in generated YAML.
+    
+    This test should FAIL with the current implementation to demonstrate the bug
+    with multiple levels of nesting.
+    """
+    
+    class DeepestModel(BaseModel):
+        deepest_field: str = Field(
+            json_schema_extra={
+                "example": "deep value",
+                "comment": "Comment from the deepest level"
+            }
+        )
+    
+    class MiddleModel(BaseModel):
+        middle_field: str = Field(
+            json_schema_extra={
+                "example": "middle value",
+                "comment": "Comment from the middle level"
+            }
+        )
+        deepest: DeepestModel = Field(
+            json_schema_extra={
+                "comment": "Comment about deepest object"
+            }
+        )
+    
+    class TopModel(BaseModel):
+        top_field: str = Field(
+            json_schema_extra={
+                "example": "top value",
+                "comment": "Comment from the top level"
+            }
+        )
+        middle: MiddleModel = Field(
+            json_schema_extra={
+                "comment": "Comment about middle object"
+            }
+        )
+    
+    yaml_example = pydantic_to_yaml_example(TopModel)
+    print(f"\nGenerated YAML:\n{yaml_example}")
+    
+    # Top level comments should be present (this works currently)
+    assert "# Comment from the top level" in yaml_example
+    assert "# Comment about middle object" in yaml_example
+    
+    # These assertions should FAIL with current implementation - nested comments missing
+    assert "# Comment from the middle level" in yaml_example, \
+        "Comments from nested BaseModel fields are not included in YAML output"
+    assert "# Comment about deepest object" in yaml_example, \
+        "Comments from nested BaseModel fields are not included in YAML output"
+    assert "# Comment from the deepest level" in yaml_example, \
+        "Comments from deeply nested BaseModel fields are not included in YAML output"
+
+
+def test_list_of_nested_objects_comments_bug():
+    """Test that comments from BaseModel objects in lists are included in generated YAML.
+    
+    This test should FAIL with the current implementation to demonstrate the bug
+    where BaseModel objects inside lists don't have their field comments included.
+    """
+    
+    class ItemModel(BaseModel):
+        item_name: str = Field(
+            json_schema_extra={
+                "example": "item name",
+                "comment": "Comment for item name field"
+            }
+        )
+        item_value: float = Field(
+            json_schema_extra={
+                "example": 99.99,
+                "comment": "Comment for item value field"
+            }
+        )
+    
+    class ContainerModel(BaseModel):
+        container_field: str = Field(
+            json_schema_extra={
+                "example": "container value",
+                "comment": "Comment from container model"
+            }
+        )
+        items: List[ItemModel] = Field(
+            json_schema_extra={
+                "comment": "List of items with their own comments"
+            }
+        )
+    
+    yaml_example = pydantic_to_yaml_example(ContainerModel)
+    print(f"\nGenerated YAML:\n{yaml_example}")
+    
+    # Container level comments should be present (this works currently)
+    assert "# Comment from container model" in yaml_example
+    assert "# List of items with their own comments" in yaml_example
+    
+    # These assertions should FAIL with current implementation - nested list item comments missing
+    assert "# Comment for item name field" in yaml_example, \
+        "Comments from BaseModel fields inside lists are not included in YAML output"
+    assert "# Comment for item value field" in yaml_example, \
+        "Comments from BaseModel fields inside lists are not included in YAML output"
