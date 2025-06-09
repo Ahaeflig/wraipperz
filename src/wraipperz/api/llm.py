@@ -1753,6 +1753,10 @@ class AIManager:
         | retry_if_exception_type(google_exceptions.ServiceUnavailable)
         | retry_if_exception_type(google_exceptions.ResourceExhausted)
         | retry_if_exception_type(anthropic.InternalServerError)
+        | retry_if_exception_type(
+            ClientError
+        )  # AWS Bedrock errors including ThrottlingException
+        | retry_if_exception_type(BotoCoreError)
     ),
     wait=wait_exponential(multiplier=2, min=2, max=120),
     stop=stop_after_attempt(3),
@@ -1775,6 +1779,10 @@ def call_ai_with_retry(ai_manager, messages, temperature, max_tokens, model, **k
         | retry_if_exception_type(google_exceptions.ServiceUnavailable)
         | retry_if_exception_type(google_exceptions.ResourceExhausted)
         | retry_if_exception_type(anthropic.InternalServerError)
+        | retry_if_exception_type(
+            ClientError
+        )  # AWS Bedrock errors including ThrottlingException
+        | retry_if_exception_type(BotoCoreError)
     ),
     wait=wait_exponential(multiplier=2, min=2, max=120),
     stop=stop_after_attempt(3),
@@ -1800,6 +1808,10 @@ async def call_ai_async_with_retry(
         | retry_if_exception_type(google_exceptions.ServiceUnavailable)
         | retry_if_exception_type(google_exceptions.ResourceExhausted)
         | retry_if_exception_type(anthropic.InternalServerError)
+        | retry_if_exception_type(
+            ClientError
+        )  # AWS Bedrock errors including ThrottlingException
+        | retry_if_exception_type(BotoCoreError)
     ),
     wait=wait_exponential(multiplier=2, min=2, max=120),
     stop=stop_after_attempt(3),
@@ -1822,6 +1834,10 @@ def generate_with_retry(ai_manager, messages, temperature, max_tokens, model, **
         | retry_if_exception_type(google_exceptions.ServiceUnavailable)
         | retry_if_exception_type(google_exceptions.ResourceExhausted)
         | retry_if_exception_type(anthropic.InternalServerError)
+        | retry_if_exception_type(
+            ClientError
+        )  # AWS Bedrock errors including ThrottlingException
+        | retry_if_exception_type(BotoCoreError)
     ),
     wait=wait_exponential(multiplier=2, min=2, max=120),
     stop=stop_after_attempt(3),
