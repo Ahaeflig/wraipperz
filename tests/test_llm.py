@@ -147,3 +147,66 @@ def test_call_ai_bedrock_with_image_and_message_builder():
     # Validate cost structure
     assert isinstance(cost, (int, float))
     assert cost >= 0
+
+
+@pytest.mark.skipif(
+    not os.getenv("ANTHROPIC_API_KEY"), reason="Anthropic API key not found"
+)
+def test_call_ai_anthropic_claude_sonnet_4():
+    """Integration test: Test call_ai wrapper with Anthropic Claude Sonnet 4"""
+
+    # Test the call_ai wrapper function with Claude Sonnet 4
+    response, cost = call_ai(
+        model="anthropic/claude-sonnet-4-20250514",
+        messages=TEXT_MESSAGES,
+        temperature=0,
+        max_tokens=150,
+    )
+
+    # Validate response
+    assert isinstance(response, str)
+    assert len(response) > 0
+    assert (
+        "TEST_RESPONSE_123" in response
+    ), f"Expected 'TEST_RESPONSE_123', got: {response}"
+
+    # Validate cost structure
+    assert isinstance(cost, (int, float))
+    assert cost >= 0
+
+
+@pytest.mark.skipif(
+    not os.getenv("ANTHROPIC_API_KEY"), reason="Anthropic API key not found"
+)
+def test_call_ai_anthropic_claude_sonnet_4_with_image():
+    """Integration test: Test call_ai wrapper with Anthropic Claude Sonnet 4 with image"""
+
+    # Create messages with image using MessageBuilder
+    messages = (
+        MessageBuilder()
+        .add_system(
+            "You are a helpful assistant. Identify the color in the image and respond with just the color name."
+        )
+        .add_user("What color is the square in this image?")
+        .add_image(str(TEST_IMAGE_PATH))
+        .build()
+    )
+
+    # Test the call_ai wrapper function with image
+    response, cost = call_ai(
+        model="anthropic/claude-sonnet-4-20250514",
+        messages=messages,
+        temperature=0,
+        max_tokens=150,
+    )
+
+    # Validate response
+    assert isinstance(response, str)
+    assert len(response) > 0
+    assert (
+        "red" in response.lower()
+    ), f"Expected response to contain 'red', got: {response}"
+
+    # Validate cost structure
+    assert isinstance(cost, (int, float))
+    assert cost >= 0
