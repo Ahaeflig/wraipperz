@@ -86,7 +86,8 @@ def pydantic_to_yaml_example(model_class: Type[BaseModel]) -> str:
             example = generate_default_example(model_field.annotation)
 
         # Generate YAML for this field with proper indentation
-        field_yaml = format_field_yaml(field_name, example, comment, model_class)
+        field_annotation = model_field.annotation
+        field_yaml = format_field_yaml(field_name, example, comment, field_annotation)
         yaml_lines.extend(field_yaml)
 
     return "\n".join(yaml_lines)
@@ -103,7 +104,7 @@ def pydantic_to_yaml(model_class: Type[BaseModel]) -> str:
 
 
 def format_field_yaml(
-    field_name: str, value: Any, comment: str = "", model_class: Type[BaseModel] = None, indent: int = 0
+    field_name: str, value: Any, comment: str = "", field_annotation: Any = None, indent: int = 0
 ) -> list:
     """
     Format a field and its value as YAML with proper indentation.
@@ -112,6 +113,7 @@ def format_field_yaml(
         field_name: The name of the field
         value: The value to format
         comment: Optional comment to add
+        field_annotation: The type annotation of the field
         indent: Current indentation level
 
     Returns:
@@ -123,15 +125,21 @@ def format_field_yaml(
     # Handle different value types
     if isinstance(value, list):
         lines.append(f"{indent_str}{field_name}:{comment}")
-        lines.extend(format_list_yaml(value, indent + 2))
+        # Extract list item type from annotation
+        list_item_type = None
+        if field_annotation:
+            origin = get_origin(field_annotation)
+            if origin is list:
+                args = get_args(field_annotation)
+                if args:
+                    list_item_type = args[0]
+        lines.extend(format_list_yaml(value, indent + 2, list_item_type))
     elif isinstance(value, dict):
         lines.append(f"{indent_str}{field_name}:{comment}")
         # Check if this dict represents a BaseModel
         nested_model_class = None
-        if model_class and hasattr(model_class, 'model_fields') and field_name in model_class.model_fields:
-            field_annotation = model_class.model_fields[field_name].annotation
-            if isinstance(field_annotation, type) and issubclass(field_annotation, BaseModel):
-                nested_model_class = field_annotation
+        if field_annotation and isinstance(field_annotation, type) and issubclass(field_annotation, BaseModel):
+            nested_model_class = field_annotation
         lines.extend(format_dict_yaml(value, indent + 2, nested_model_class))
     else:
         yaml_value = format_scalar_yaml(value)
@@ -140,13 +148,14 @@ def format_field_yaml(
     return lines
 
 
-def format_list_yaml(items: list, indent: int = 0) -> list:
+def format_list_yaml(items: list, indent: int = 0, list_item_type: Any = None) -> list:
     """
     Format a list as YAML with proper indentation.
 
     Args:
         items: The list to format
         indent: Current indentation level
+        list_item_type: The type of items in the list
 
     Returns:
         List of YAML lines
@@ -159,22 +168,17 @@ def format_list_yaml(items: list, indent: int = 0) -> list:
 
     for item in items:
         if isinstance(item, dict):
-            # Use a single line with dash and first item if dictionary
-            dict_lines = format_dict_yaml(item, indent + 2)
+            # Handle dictionary items (e.g., from BaseModel.model_dump() or generate_default_example)
+            lines.append(f"{indent_str}- ")
+            dict_lines = format_dict_yaml(item, indent + 2, list_item_type)
+            # Merge the first line with the dash
             if dict_lines:
-                # Add the dash to the beginning of the first line instead of as a separate line
-                first_key = list(item.keys())[0] if item else "empty"
-                lines.append(
-                    f"{indent_str}- {first_key}: {format_scalar_yaml(item[first_key])}"
-                )
-                # Add the rest of the items with proper indentation
-                for line in dict_lines[1:]:
-                    lines.append(line)
-            else:
-                lines.append(f"{indent_str}- {{}}")
+                first_line = dict_lines[0].strip()
+                lines[-1] = f"{indent_str}- {first_line}"
+                lines.extend(dict_lines[1:])
         elif isinstance(item, list):
             lines.append(f"{indent_str}- ")
-            list_lines = format_list_yaml(item, indent + 2)
+            list_lines = format_list_yaml(item, indent + 2, list_item_type)
             lines.extend(list_lines)
         elif hasattr(item, "__dict__") and not isinstance(
             item, (str, int, float, bool)
@@ -186,26 +190,44 @@ def format_list_yaml(items: list, indent: int = 0) -> list:
                 obj_dict = item.__dict__
 
             if obj_dict:
+                # Get the model class for comment extraction
+                item_model_class = list_item_type if list_item_type and isinstance(list_item_type, type) and issubclass(list_item_type, BaseModel) else (type(item) if hasattr(type(item), 'model_fields') else None)
+                
                 # Get the first key to start the line with
                 first_key = list(obj_dict.keys())[0]
                 first_value = obj_dict[first_key]
+                
+                # Extract comment for first field
+                first_comment = ""
+                if item_model_class and hasattr(item_model_class, 'model_fields') and first_key in item_model_class.model_fields:
+                    field = item_model_class.model_fields[first_key]
+                    if field.json_schema_extra and "comment" in field.json_schema_extra:
+                        first_comment = f" # {field.json_schema_extra['comment']}"
+                
                 # Start with dash and the first property on the same line
                 lines.append(
-                    f"{indent_str}- {first_key}: {format_scalar_yaml(first_value)}"
+                    f"{indent_str}- {first_key}: {format_scalar_yaml(first_value)}{first_comment}"
                 )
 
                 # Add remaining properties with correct indentation
                 for key, value in obj_dict.items():
                     if key != first_key:  # Skip the first one we already added
+                        # Extract comment for this field
+                        comment = ""
+                        if item_model_class and hasattr(item_model_class, 'model_fields') and key in item_model_class.model_fields:
+                            field = item_model_class.model_fields[key]
+                            if field.json_schema_extra and "comment" in field.json_schema_extra:
+                                comment = f" # {field.json_schema_extra['comment']}"
+                        
                         if isinstance(value, (dict, list)):
-                            lines.append(f"{' ' * (indent+2)}{key}:")
+                            lines.append(f"{' ' * (indent+2)}{key}:{comment}")
                             if isinstance(value, dict):
                                 lines.extend(format_dict_yaml(value, indent + 4))
                             else:
                                 lines.extend(format_list_yaml(value, indent + 4))
                         else:
                             lines.append(
-                                f"{' ' * (indent+2)}{key}: {format_scalar_yaml(value)}"
+                                f"{' ' * (indent+2)}{key}: {format_scalar_yaml(value)}{comment}"
                             )
             else:
                 lines.append(f"{indent_str}- {{}}")
@@ -316,6 +338,7 @@ def generate_default_example(type_annotation):
                 example = generate_default_example(model_field.annotation)
 
             example_dict[field_name] = example
+        
         return example_dict
 
     # Handle List
