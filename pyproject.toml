@@ -1,6 +1,6 @@
 [project]
 name = "wraipperz"
-version = "0.1.35"
+version = "0.1.36"
 description = "Simple wrappers for various AI APIs including LLMs, ASR, and TTS"
 readme = "README.md"
 authors = [{ name = "Adan Häfliger", email = "adan.haefliger@gmail.com" }]
