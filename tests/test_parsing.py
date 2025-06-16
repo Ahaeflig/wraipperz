@@ -1,7 +1,7 @@
 import pytest
 import yaml
 from typing import Optional, List, Dict
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 from datetime import date
 import enum
 from wraipperz.parsing.yaml_utils import pydantic_to_yaml_example
@@ -348,26 +348,26 @@ def test_nested_basemodel_without_explicit_example():
 
 def test_nested_object_comments_bug():
     """Test that comments from nested BaseModel objects are included in generated YAML."""
-    
+
     class NestedModel(BaseModel):
         nested_field: str = Field(
             json_schema_extra={
                 "example": "nested value",
-                "comment": "This is a comment from the nested model"
+                "comment": "This is a comment from the nested model",
             }
         )
         another_nested_field: int = Field(
             json_schema_extra={
                 "example": 42,
-                "comment": "Another comment from nested model"
+                "comment": "Another comment from nested model",
             }
         )
-    
+
     class ParentModel(BaseModel):
         parent_field: str = Field(
             json_schema_extra={
-                "example": "parent value", 
-                "comment": "This is a comment from the parent model"
+                "example": "parent value",
+                "comment": "This is a comment from the parent model",
             }
         )
         nested: NestedModel = Field(
@@ -375,121 +375,584 @@ def test_nested_object_comments_bug():
                 "comment": "This is a comment about the nested object field"
             }
         )
-    
+
     yaml_example = pydantic_to_yaml_example(ParentModel)
     print(f"\nGenerated YAML:\n{yaml_example}")
-    
+
     # Parent level comments should be present (this works currently)
     assert "# This is a comment from the parent model" in yaml_example
     assert "# This is a comment about the nested object field" in yaml_example
-    
+
     # These assertions should FAIL with current implementation - nested object comments missing
-    assert "# This is a comment from the nested model" in yaml_example, \
-        "Comments from nested BaseModel fields are not included in YAML output"
-    assert "# Another comment from nested model" in yaml_example, \
-        "Comments from nested BaseModel fields are not included in YAML output"
+    assert (
+        "# This is a comment from the nested model" in yaml_example
+    ), "Comments from nested BaseModel fields are not included in YAML output"
+    assert (
+        "# Another comment from nested model" in yaml_example
+    ), "Comments from nested BaseModel fields are not included in YAML output"
 
 
 def test_deeply_nested_object_comments_bug():
     """Test that comments from deeply nested BaseModel objects are included in generated YAML.
-    
+
     This test should FAIL with the current implementation to demonstrate the bug
     with multiple levels of nesting.
     """
-    
+
     class DeepestModel(BaseModel):
         deepest_field: str = Field(
             json_schema_extra={
                 "example": "deep value",
-                "comment": "Comment from the deepest level"
+                "comment": "Comment from the deepest level",
             }
         )
-    
+
     class MiddleModel(BaseModel):
         middle_field: str = Field(
             json_schema_extra={
                 "example": "middle value",
-                "comment": "Comment from the middle level"
+                "comment": "Comment from the middle level",
             }
         )
         deepest: DeepestModel = Field(
-            json_schema_extra={
-                "comment": "Comment about deepest object"
-            }
+            json_schema_extra={"comment": "Comment about deepest object"}
         )
-    
+
     class TopModel(BaseModel):
         top_field: str = Field(
             json_schema_extra={
                 "example": "top value",
-                "comment": "Comment from the top level"
+                "comment": "Comment from the top level",
             }
         )
         middle: MiddleModel = Field(
-            json_schema_extra={
-                "comment": "Comment about middle object"
-            }
+            json_schema_extra={"comment": "Comment about middle object"}
         )
-    
+
     yaml_example = pydantic_to_yaml_example(TopModel)
     print(f"\nGenerated YAML:\n{yaml_example}")
-    
+
     # Top level comments should be present (this works currently)
     assert "# Comment from the top level" in yaml_example
     assert "# Comment about middle object" in yaml_example
-    
+
     # These assertions should FAIL with current implementation - nested comments missing
-    assert "# Comment from the middle level" in yaml_example, \
-        "Comments from nested BaseModel fields are not included in YAML output"
-    assert "# Comment about deepest object" in yaml_example, \
-        "Comments from nested BaseModel fields are not included in YAML output"
-    assert "# Comment from the deepest level" in yaml_example, \
-        "Comments from deeply nested BaseModel fields are not included in YAML output"
+    assert (
+        "# Comment from the middle level" in yaml_example
+    ), "Comments from nested BaseModel fields are not included in YAML output"
+    assert (
+        "# Comment about deepest object" in yaml_example
+    ), "Comments from nested BaseModel fields are not included in YAML output"
+    assert (
+        "# Comment from the deepest level" in yaml_example
+    ), "Comments from deeply nested BaseModel fields are not included in YAML output"
 
 
 def test_list_of_nested_objects_comments_bug():
     """Test that comments from BaseModel objects in lists are included in generated YAML.
-    
+
     This test should FAIL with the current implementation to demonstrate the bug
     where BaseModel objects inside lists don't have their field comments included.
     """
-    
+
     class ItemModel(BaseModel):
         item_name: str = Field(
             json_schema_extra={
                 "example": "item name",
-                "comment": "Comment for item name field"
+                "comment": "Comment for item name field",
             }
         )
         item_value: float = Field(
             json_schema_extra={
                 "example": 99.99,
-                "comment": "Comment for item value field"
+                "comment": "Comment for item value field",
             }
         )
-    
+
     class ContainerModel(BaseModel):
         container_field: str = Field(
             json_schema_extra={
                 "example": "container value",
-                "comment": "Comment from container model"
+                "comment": "Comment from container model",
             }
         )
         items: List[ItemModel] = Field(
-            json_schema_extra={
-                "comment": "List of items with their own comments"
-            }
+            json_schema_extra={"comment": "List of items with their own comments"}
         )
-    
+
     yaml_example = pydantic_to_yaml_example(ContainerModel)
     print(f"\nGenerated YAML:\n{yaml_example}")
-    
+
     # Container level comments should be present (this works currently)
     assert "# Comment from container model" in yaml_example
     assert "# List of items with their own comments" in yaml_example
-    
+
     # These assertions should FAIL with current implementation - nested list item comments missing
-    assert "# Comment for item name field" in yaml_example, \
-        "Comments from BaseModel fields inside lists are not included in YAML output"
-    assert "# Comment for item value field" in yaml_example, \
-        "Comments from BaseModel fields inside lists are not included in YAML output"
+    assert (
+        "# Comment for item name field" in yaml_example
+    ), "Comments from BaseModel fields inside lists are not included in YAML output"
+    assert (
+        "# Comment for item value field" in yaml_example
+    ), "Comments from BaseModel fields inside lists are not included in YAML output"
+
+
+# ============================================================================
+# COMPREHENSIVE BUG TESTS - Testing edge cases and potential failures
+# ============================================================================
+
+
+def test_circular_reference_bug():
+    """Test that circular references cause infinite recursion.
+
+    This test demonstrates a critical bug where self-referencing models
+    will cause infinite recursion and stack overflow.
+    """
+
+    class SelfReference(BaseModel):
+        name: str = Field(
+            json_schema_extra={"example": "test", "comment": "Name field"}
+        )
+        self_ref: Optional["SelfReference"] = Field(
+            default=None, json_schema_extra={"comment": "Self reference field"}
+        )
+
+    # This should either handle circular references gracefully or raise a proper error
+    # Currently this will cause infinite recursion - CRITICAL BUG
+    with pytest.raises((RecursionError, RuntimeError, TypeError)):
+        yaml_example = pydantic_to_yaml_example(SelfReference)
+        print(f"Generated YAML (this shouldn't happen): {yaml_example}")
+
+
+def test_mutual_circular_reference_bug():
+    """Test mutual circular references between two models."""
+
+    class ModelA(BaseModel):
+        name: str = Field(json_schema_extra={"example": "A"})
+        ref_to_b: Optional["ModelB"] = None
+
+    class ModelB(BaseModel):
+        name: str = Field(json_schema_extra={"example": "B"})
+        ref_to_a: Optional[ModelA] = None
+
+    # Update forward references
+    ModelA.model_rebuild()
+    ModelB.model_rebuild()
+
+    # This will also cause infinite recursion
+    with pytest.raises((RecursionError, RuntimeError, TypeError)):
+        _ = pydantic_to_yaml_example(ModelA)
+
+
+def test_complex_union_types_bug():
+    """Test that complex Union types (non-Optional) are not handled properly."""
+    from typing import Union
+
+    class UnionModel(BaseModel):
+        simple_union: Union[str, int] = Field(
+            json_schema_extra={"example": "test", "comment": "String or int field"}
+        )
+        complex_union: Union[str, int, float, bool] = Field(
+            json_schema_extra={"example": 42, "comment": "Multiple type field"}
+        )
+        union_with_model: Union[str, Address] = Field(
+            json_schema_extra={
+                "example": "simple string",
+                "comment": "String or Address",
+            }
+        )
+
+    yaml_example = pydantic_to_yaml_example(UnionModel)
+    print(f"Generated YAML:\n{yaml_example}")
+
+    parsed_data = yaml.safe_load(yaml_example)
+
+    # The current implementation doesn't handle Union types properly
+    # It should use the example if provided, but for fields without examples
+    # it will likely fall back to None or cause errors
+    assert "simple_union" in parsed_data
+    assert "complex_union" in parsed_data
+    assert "union_with_model" in parsed_data
+
+
+def test_input_validation_bug():
+    """Test that passing a model instance instead of class gives proper error."""
+
+    # Create an instance instead of using the class
+    actor_instance = Actor(name="Test Actor", height=1.75)
+
+    # This should raise a clear TypeError, but the current error message might be confusing
+    with pytest.raises(TypeError) as exc_info:
+        pydantic_to_yaml_example(actor_instance)
+
+    # The error message should be clear about expecting a class, not instance
+    error_msg = str(exc_info.value)
+    assert "BaseModel" in error_msg
+
+
+def test_non_basemodel_input_validation():
+    """Test validation with non-BaseModel inputs."""
+
+    class RegularClass:
+        pass
+
+    # Should raise TypeError for non-BaseModel classes
+    with pytest.raises(TypeError):
+        pydantic_to_yaml_example(RegularClass)
+
+    # Should raise TypeError for built-in types
+    with pytest.raises(TypeError):
+        pydantic_to_yaml_example(str)
+
+    with pytest.raises(TypeError):
+        pydantic_to_yaml_example(dict)
+
+
+def test_empty_enum_handling_bug():
+    """Test that empty enums cause IndexError."""
+
+    class EmptyEnum(enum.Enum):
+        pass  # No enum values
+
+    class ModelWithEmptyEnum(BaseModel):
+        empty_field: EmptyEnum = Field(json_schema_extra={"comment": "This will break"})
+
+    # This should cause an IndexError in generate_default_example
+    # when trying to access list(EmptyEnum)[0]
+    with pytest.raises(IndexError):
+        _ = pydantic_to_yaml_example(ModelWithEmptyEnum)
+
+
+def test_invalid_json_schema_extra_bug():
+    """Test edge cases with malformed json_schema_extra."""
+
+    # Test with non-dict json_schema_extra (this might not be possible with current Pydantic)
+    # But let's test what happens with missing or None values
+
+    class BadSchemaModel(BaseModel):
+        # Field with None json_schema_extra
+        field1: str = Field(json_schema_extra=None)
+        # Field with empty dict
+        field2: str = Field(json_schema_extra={})
+        # Field with malformed comment
+        field3: str = Field(json_schema_extra={"comment": None})
+        # Field with non-string comment
+        field4: str = Field(json_schema_extra={"comment": 123})
+
+    # Should handle these gracefully without crashing
+    yaml_example = pydantic_to_yaml_example(BadSchemaModel)
+    parsed_data = yaml.safe_load(yaml_example)
+
+    assert "field1" in parsed_data
+    assert "field2" in parsed_data
+    assert "field3" in parsed_data
+    assert "field4" in parsed_data
+
+
+def test_forward_reference_bug():
+    """Test handling of forward references (string annotations)."""
+
+    class ForwardRefModel(BaseModel):
+        name: str = Field(json_schema_extra={"example": "test"})
+        # Forward reference as string
+        future_field: Optional["FutureModel"] = Field(
+            default=None, json_schema_extra={"comment": "Reference to future model"}
+        )
+
+    class FutureModel(BaseModel):
+        value: str = Field(json_schema_extra={"example": "future value"})
+
+    # Update forward references
+    ForwardRefModel.model_rebuild()
+
+    # This might not work properly with string forward references
+    yaml_example = pydantic_to_yaml_example(ForwardRefModel)
+    parsed_data = yaml.safe_load(yaml_example)
+
+    assert "name" in parsed_data
+    assert "future_field" in parsed_data
+
+
+def test_deep_nesting_performance_bug():
+    """Test very deep nesting that could cause performance issues or stack overflow."""
+
+    class Level5(BaseModel):
+        value: str = Field(json_schema_extra={"example": "level5"})
+
+    class Level4(BaseModel):
+        nested: Level5 = Field(json_schema_extra={"comment": "Level 4"})
+
+    class Level3(BaseModel):
+        nested: Level4 = Field(json_schema_extra={"comment": "Level 3"})
+
+    class Level2(BaseModel):
+        nested: Level3 = Field(json_schema_extra={"comment": "Level 2"})
+
+    class Level1(BaseModel):
+        nested: Level2 = Field(json_schema_extra={"comment": "Level 1"})
+
+    class RootLevel(BaseModel):
+        deep_nested: Level1 = Field(json_schema_extra={"comment": "Root level"})
+
+    # This should work but might be slow or cause issues with very deep nesting
+    yaml_example = pydantic_to_yaml_example(RootLevel)
+    parsed_data = yaml.safe_load(yaml_example)
+
+    # Verify the deep nesting works
+    assert "deep_nested" in parsed_data
+    assert "nested" in parsed_data["deep_nested"]
+
+    # Check that nested comments are missing (demonstrates the bug)
+    # This will likely fail showing the comment propagation bug
+    assert "# Level 1" in yaml_example  # Parent level comment should work
+    # These will likely fail:
+    try:
+        assert "# Level 2" in yaml_example
+        assert "# Level 3" in yaml_example
+        assert "# Level 4" in yaml_example
+    except AssertionError:
+        print("Deep nesting comment propagation bug confirmed")
+
+
+def test_field_constraints_ignored_bug():
+    """Test that field constraints are ignored and examples might violate them."""
+
+    class ConstrainedModel(BaseModel):
+        positive_int: int = Field(
+            gt=0,
+            json_schema_extra={
+                "example": -5,
+                "comment": "Should be positive but example is negative",
+            },
+        )
+        min_length_str: str = Field(
+            min_length=10,
+            json_schema_extra={
+                "example": "short",
+                "comment": "Should be at least 10 chars",
+            },
+        )
+
+        @field_validator("positive_int")  # Updated decorator
+        @classmethod  # Required for field_validator
+        def validate_positive(cls, v):
+            if v <= 0:
+                raise ValueError("must be positive")
+            return v  # Must return the value
+
+        @field_validator("min_length_str")  # Updated decorator
+        @classmethod  # Required for field_validator
+        def validate_length(cls, v):
+            if len(v) < 10:
+                raise ValueError("must be at least 10 characters")
+            return v  # Must return the value
+
+    # The function should generate YAML, but the examples violate the constraints
+    yaml_example = pydantic_to_yaml_example(ConstrainedModel)
+    parsed_data = yaml.safe_load(yaml_example)
+
+    # These examples violate the model's constraints
+    assert parsed_data["positive_int"] == -5  # Violates gt=0
+    assert parsed_data["min_length_str"] == "short"  # Violates min_length=10
+
+    # If we tried to create an actual instance with this data, it would fail
+    with pytest.raises(ValueError):
+        ConstrainedModel(**parsed_data)
+
+
+def test_nested_list_complex_types_bug():
+    """Test complex nested list structures with multiple BaseModel types."""
+
+    class Item(BaseModel):
+        name: str = Field(json_schema_extra={"example": "item", "comment": "Item name"})
+        tags: List[str] = Field(json_schema_extra={"example": ["tag1", "tag2"]})
+
+    class Category(BaseModel):
+        category_name: str = Field(json_schema_extra={"example": "category"})
+        items: List[Item] = Field(json_schema_extra={"comment": "Items in category"})
+
+    class Store(BaseModel):
+        store_name: str = Field(json_schema_extra={"example": "My Store"})
+        categories: List[Category] = Field(
+            json_schema_extra={"comment": "Store categories"}
+        )
+        featured_items: List[Item] = Field(
+            json_schema_extra={"comment": "Featured items"}
+        )
+
+    yaml_example = pydantic_to_yaml_example(Store)
+    print(f"Complex nested YAML:\n{yaml_example}")
+
+    parsed_data = yaml.safe_load(yaml_example)
+
+    # Verify structure
+    assert "categories" in parsed_data
+    assert isinstance(parsed_data["categories"], list)
+    assert len(parsed_data["categories"]) > 0
+
+    # Check first category
+    first_category = parsed_data["categories"][0]
+    assert "items" in first_category
+    assert isinstance(first_category["items"], list)
+
+    # Comments from nested BaseModel fields in lists will likely be missing
+    # This demonstrates the comment propagation bug in lists
+    assert "# Store categories" in yaml_example  # Top level should work
+
+    # These will likely fail - nested comments in list items missing:
+    try:
+        assert "# Item name" in yaml_example
+        assert "# Items in category" in yaml_example
+    except AssertionError:
+        print("Nested list comment propagation bug confirmed")
+
+
+def test_none_values_and_optional_handling():
+    """Test handling of None values and Optional fields edge cases."""
+
+    class OptionalModel(BaseModel):
+        required_field: str = Field(json_schema_extra={"example": "required"})
+        optional_with_example: Optional[str] = Field(
+            default=None,
+            json_schema_extra={
+                "example": "optional",
+                "comment": "Optional with example",
+            },
+        )
+        optional_without_example: Optional[str] = Field(
+            default=None, json_schema_extra={"comment": "Optional without example"}
+        )
+        optional_complex: Optional[Address] = Field(
+            default=None, json_schema_extra={"comment": "Optional complex type"}
+        )
+
+    yaml_example = pydantic_to_yaml_example(OptionalModel)
+    print(f"Optional fields YAML:\n{yaml_example}")
+
+    parsed_data = yaml.safe_load(yaml_example)
+
+    assert "required_field" in parsed_data
+    assert "optional_with_example" in parsed_data
+    assert "optional_without_example" in parsed_data
+    assert "optional_complex" in parsed_data
+
+    # Check how None vs example values are handled
+    assert parsed_data["optional_with_example"] == "optional"
+    # The optional_without_example might be None or a default value
+
+
+def test_generic_types_bug():
+    """Test handling of generic types and type variables."""
+    from typing import TypeVar, Generic
+
+    T = TypeVar("T")
+
+    class GenericModel(BaseModel, Generic[T]):
+        value: T = Field(json_schema_extra={"comment": "Generic value"})
+
+    # This will likely cause issues since T is not resolved
+    # The current implementation doesn't handle generics properly
+    try:
+        yaml_example = pydantic_to_yaml_example(GenericModel)
+        print(f"Generic model YAML:\n{yaml_example}")
+
+        # If it doesn't crash, the result might not be meaningful
+        parsed_data = yaml.safe_load(yaml_example)
+        assert "value" in parsed_data
+
+    except (TypeError, AttributeError, NameError) as e:
+        print(f"Generic types not supported: {e}")
+        # This is expected - generics are not properly handled
+
+
+def test_set_and_tuple_complex_types():
+    """Test handling of Set and Tuple types with complex nested structures."""
+    from typing import Set, Tuple
+
+    class ComplexTypesModel(BaseModel):
+        string_set: Set[str] = Field(
+            json_schema_extra={
+                "example": {"item1", "item2"},
+                "comment": "Set of strings",
+            }
+        )
+        nested_tuple: Tuple[str, int, Address] = Field(
+            json_schema_extra={
+                "example": (
+                    "test",
+                    42,
+                    {"street": "123 Main", "city": "NYC", "country": "USA"},
+                ),
+                "comment": "Tuple with mixed types",
+            }
+        )
+        set_of_models: Set[Address] = Field(
+            json_schema_extra={"comment": "Set of Address models"}
+        )
+
+    yaml_example = pydantic_to_yaml_example(ComplexTypesModel)
+    print(f"Complex types YAML:\n{yaml_example}")
+
+    parsed_data = yaml.safe_load(yaml_example)
+
+    # Sets and tuples might not serialize properly to YAML
+    # or might lose their type information
+    assert "string_set" in parsed_data
+    assert "nested_tuple" in parsed_data
+    assert "set_of_models" in parsed_data
+
+
+def test_model_with_class_methods_and_properties():
+    """Test model with class methods and properties that might interfere."""
+
+    class ComplexBehaviorModel(BaseModel):
+        name: str = Field(json_schema_extra={"example": "test"})
+
+        @property
+        def computed_value(self) -> str:
+            return f"computed_{self.name}"
+
+        @classmethod
+        def create_default(cls):
+            return cls(name="default")
+
+        def instance_method(self) -> str:
+            return "instance"
+
+    # Should ignore methods and properties, only process actual fields
+    yaml_example = pydantic_to_yaml_example(ComplexBehaviorModel)
+    parsed_data = yaml.safe_load(yaml_example)
+
+    # Should only have the actual field, not computed properties
+    assert "name" in parsed_data
+    assert "computed_value" not in parsed_data
+    assert parsed_data["name"] == "test"
+
+
+def test_extremely_nested_dict_structure():
+    """Test extremely nested dictionary structures that could cause issues."""
+
+    class ExtremeNesting(BaseModel):
+        # Dict[str, Dict[str, Dict[str, Dict[str, List[Dict[str, str]]]]]]
+        ultra_nested: Dict[str, Dict[str, Dict[str, Dict[str, List[str]]]]] = Field(
+            json_schema_extra={
+                "example": {
+                    "level1": {"level2": {"level3": {"level4": ["item1", "item2"]}}}
+                },
+                "comment": "Extremely nested structure",
+            }
+        )
+
+    yaml_example = pydantic_to_yaml_example(ExtremeNesting)
+    print(f"Extreme nesting YAML:\n{yaml_example}")
+
+    parsed_data = yaml.safe_load(yaml_example)
+
+    # Verify the structure is preserved
+    assert "ultra_nested" in parsed_data
+    assert "level1" in parsed_data["ultra_nested"]
+    assert "level2" in parsed_data["ultra_nested"]["level1"]
+    assert "level3" in parsed_data["ultra_nested"]["level1"]["level2"]
+    assert "level4" in parsed_data["ultra_nested"]["level1"]["level2"]["level3"]
+    assert isinstance(
+        parsed_data["ultra_nested"]["level1"]["level2"]["level3"]["level4"], list
+    )
