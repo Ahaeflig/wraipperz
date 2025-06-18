@@ -158,6 +158,42 @@ class OpenAIProvider(AIProvider):
         self.sync_client = OpenAI(api_key=api_key or os.getenv("OPENAI_API_KEY"))
         self.async_client = AsyncOpenAI(api_key=api_key or os.getenv("OPENAI_API_KEY"))
 
+        try:
+            # Get models from API - only include chat/text generation models
+            api_models = []
+            models_response = self.sync_client.models.list()
+
+            for model in models_response.data:
+                # Filter for models that support text generation/chat completions
+                # Exclude embedding, image, audio, and other specialized models
+                model_id = model.id
+                if any(
+                    excluded in model_id.lower()
+                    for excluded in [
+                        "embed",
+                        "whisper",
+                        "tts",
+                        "dall-e",
+                        "davinci-002",
+                        "babbage-002",
+                    ]
+                ):
+                    continue
+
+                # Add openai/ prefix to match our naming convention
+                prefixed_model = f"openai/{model_id}"
+                api_models.append(prefixed_model)
+
+            # Add the API models to our supported models, avoiding duplicates
+            if api_models:
+                existing_models = set(self.supported_models)
+                new_models = [m for m in api_models if m not in existing_models]
+                self.supported_models.extend(new_models)
+
+        except Exception as e:
+            print(f"Warning: Could not fetch OpenAI models from API: {e}")
+            # Continue with hardcoded list as fallback
+
     def call_ai(
         self, messages, temperature, max_tokens, model="openai/gpt-4o", **kwargs
     ):
