@@ -184,6 +184,17 @@ class OpenAIProvider(AIProvider):
                 prefixed_model = f"openai/{model_id}"
                 api_models.append(prefixed_model)
 
+            # Add models that might not be returned by API (limited access/beta models)
+            beta_models = [
+                "openai/o3",
+                "openai/o3-2025-04-16",
+                "openai/o3-pro",
+                "openai/o3-pro-2025-03-19",
+                "openai/o4-mini",
+                "openai/o4-mini-2025-04-16",
+            ]
+            api_models.extend(beta_models)
+
             # Add the API models to our supported models, avoiding duplicates
             if api_models:
                 existing_models = set(self.supported_models)
@@ -198,14 +209,22 @@ class OpenAIProvider(AIProvider):
         self, messages, temperature, max_tokens, model="openai/gpt-4o", **kwargs
     ):
         try:
-            prepared_messages = self._prepare_messages(messages)  # Add this line
-            response = self.sync_client.chat.completions.create(
-                model=model.split("/")[-1],
-                messages=prepared_messages,
-                temperature=temperature,
-                max_tokens=max_tokens,
-                **kwargs,
-            )
+            # Check if this is a reasoning model and handle accordingly
+            if self._is_reasoning_model(model):
+                api_params = self._prepare_reasoning_params(
+                    messages, temperature, max_tokens, model, **kwargs
+                )
+                response = self.sync_client.chat.completions.create(**api_params)
+            else:
+                # Standard model handling
+                prepared_messages = self._prepare_messages(messages)
+                response = self.sync_client.chat.completions.create(
+                    model=model.split("/")[-1],
+                    messages=prepared_messages,
+                    temperature=temperature,
+                    max_tokens=max_tokens,
+                    **kwargs,
+                )
             return response.choices[0].message.content
         except Exception as e:
             raise e
@@ -214,14 +233,22 @@ class OpenAIProvider(AIProvider):
         self, messages, temperature, max_tokens, model="openai/gpt-4o", **kwargs
     ):
         try:
-            prepared_messages = self._prepare_messages(messages)
-            response = await self.async_client.chat.completions.create(
-                model=model.split("/")[-1],
-                messages=prepared_messages,
-                temperature=temperature,
-                max_tokens=max_tokens,
-                **kwargs,
-            )
+            # Check if this is a reasoning model and handle accordingly
+            if self._is_reasoning_model(model):
+                api_params = self._prepare_reasoning_params(
+                    messages, temperature, max_tokens, model, **kwargs
+                )
+                response = await self.async_client.chat.completions.create(**api_params)
+            else:
+                # Standard model handling
+                prepared_messages = self._prepare_messages(messages)
+                response = await self.async_client.chat.completions.create(
+                    model=model.split("/")[-1],
+                    messages=prepared_messages,
+                    temperature=temperature,
+                    max_tokens=max_tokens,
+                    **kwargs,
+                )
             return response.choices[0].message.content
         except Exception as e:
             raise e
@@ -233,6 +260,105 @@ class OpenAIProvider(AIProvider):
         self, messages, temperature, max_tokens, model=None, **kwargs
     ):
         raise NotImplementedError("This provider does not support image generation")
+
+    def _is_reasoning_model(self, model):
+        """Check if the model is a reasoning model (o1, o3 series)"""
+        model_name = model.split("/")[-1].lower()
+        reasoning_models = [
+            "o1",
+            "o1-mini",
+            "o1-preview",
+            "o1-2024-12-17",
+            "o3",
+            "o3-mini",
+            "o3-pro",
+            "o4-mini",
+        ]
+        return any(model_name.startswith(rm) for rm in reasoning_models)
+
+    def _prepare_reasoning_params(
+        self, messages, temperature, max_tokens, model, **kwargs
+    ):
+        """Prepare parameters for reasoning models with their special requirements"""
+        model_name = model.split("/")[-1]
+
+        # Handle system/developer messages based on model capabilities
+        prepared_messages = []
+        for message in messages:
+            if message["role"] == "system":
+                # Convert system to developer for newer models, or to user for older ones
+                if model_name in ["o1-mini", "o1-preview"]:
+                    # These models don't support system or developer messages
+                    prepared_messages.append(
+                        {"role": "user", "content": message["content"]}
+                    )
+                else:
+                    # Newer o1, o3 models support developer messages
+                    prepared_messages.append(
+                        {"role": "developer", "content": message["content"]}
+                    )
+            else:
+                # For regular messages, prepare them properly (handle images if supported)
+                if model_name not in [
+                    "o1-mini",
+                    "o1-preview",
+                    "o3-mini",
+                ] and isinstance(message.get("content"), list):
+                    # Models that support vision need proper message preparation
+                    prepared_message = {"role": message["role"], "content": []}
+                    for item in message["content"]:
+                        if isinstance(item, dict) and item.get("type") == "image_url":
+                            image_data = self._process_media(item["image_url"]["url"])
+                            mime_type, _ = mimetypes.guess_type(
+                                item["image_url"]["url"]
+                            )
+                            mime_type = mime_type or "image/jpeg"
+                            prepared_message["content"].append(
+                                {
+                                    "type": "image_url",
+                                    "image_url": {
+                                        "url": f"data:{mime_type};base64,{image_data}"
+                                    },
+                                }
+                            )
+                        else:
+                            prepared_message["content"].append(item)
+                    prepared_messages.append(prepared_message)
+                else:
+                    prepared_messages.append(message)
+
+        # Remove unsupported parameters for reasoning models
+        cleaned_kwargs = {}
+        unsupported_params = {
+            "temperature",
+            "top_p",
+            "presence_penalty",
+            "frequency_penalty",
+            "logprobs",
+            "top_logprobs",
+            "logit_bias",
+        }
+
+        for key, value in kwargs.items():
+            if key not in unsupported_params:
+                cleaned_kwargs[key] = value
+
+        # Use max_completion_tokens instead of max_tokens
+        api_params = {
+            "model": model_name,
+            "messages": prepared_messages,
+            "max_completion_tokens": max_tokens,
+            **cleaned_kwargs,
+        }
+
+        # Add reasoning_effort if supported and not already provided
+        if (
+            model_name not in ["o1-mini", "o1-preview"]
+            and "reasoning_effort" not in cleaned_kwargs
+        ):
+            api_params["reasoning_effort"] = "medium"
+
+        return api_params
 
     def _process_media(self, media_path):
         if isinstance(media_path, (str, Path)):
