@@ -610,3 +610,258 @@ def test_o3_pro_model_access():
         else:
             # Re-raise if it's a different error
             raise
+
+
+# ===== ANTHROPIC REASONING MODELS TESTS (Extended Thinking) =====
+
+
+@pytest.mark.skipif(
+    not os.getenv("ANTHROPIC_API_KEY"), reason="Anthropic API key not found"
+)
+def test_call_ai_claude_sonnet_4_reasoning():
+    """Integration test: Test call_ai wrapper with Anthropic Claude Sonnet 4 with extended thinking"""
+
+    # Test complex reasoning task that benefits from extended thinking
+    messages = [
+        {
+            "role": "system",
+            "content": "You are a helpful assistant. Think step by step to solve problems accurately.",
+        },
+        {
+            "role": "user",
+            "content": "A farmer has 120 apples. He sells 40% to a market, gives 25% to his neighbors, and keeps the rest. How many apples does he keep? Show your reasoning step by step.",
+        },
+    ]
+
+    # Test with automatic thinking budget (thinking=True)
+    response, cost = call_ai(
+        model="anthropic/claude-sonnet-4-20250514",
+        messages=messages,
+        temperature=1,  # Required for thinking models
+        max_tokens=1500,  # Needs to be > 1024 to accommodate minimum thinking budget
+        thinking=True,  # Enable extended thinking with automatic budget
+    )
+
+    # Validate response
+    assert isinstance(response, str)
+    assert len(response) > 0
+    # 120 - (120*0.4) - (120*0.25) = 120 - 48 - 30 = 42
+    assert (
+        "42" in response
+    ), f"Expected calculation result '42' in response, got: {response}"
+
+    # Validate cost structure
+    assert isinstance(cost, (int, float))
+    assert cost >= 0
+
+    print(f"✅ Claude Sonnet 4 reasoning test passed! Response: {response[:150]}...")
+
+
+@pytest.mark.skipif(
+    not os.getenv("ANTHROPIC_API_KEY"), reason="Anthropic API key not found"
+)
+def test_call_ai_claude_opus_4_reasoning():
+    """Integration test: Test call_ai wrapper with Anthropic Claude Opus 4 with extended thinking"""
+
+    # Test complex logical reasoning that benefits from extended thinking
+    messages = [
+        {
+            "role": "system",
+            "content": "You are a helpful assistant. Use careful logical reasoning to solve problems.",
+        },
+        {
+            "role": "user",
+            "content": "If all cats are mammals, and all mammals are animals, and Fluffy is a cat, what can we conclude about Fluffy? Explain your logical reasoning.",
+        },
+    ]
+
+    try:
+        # Test with manual thinking budget control
+        response, cost = call_ai(
+            model="anthropic/claude-opus-4-20250514",
+            messages=messages,
+            temperature=1,  # Required for thinking models
+            max_tokens=5000,  # Needs to be > thinking budget
+            thinking={
+                "type": "enabled",
+                "budget_tokens": 4000,
+            },  # Manual budget control
+        )
+
+        # Validate response
+        assert isinstance(response, str)
+        assert len(response) > 0
+        assert (
+            "animal" in response.lower()
+        ), f"Expected logical conclusion about animals in response, got: {response}"
+
+        # Validate cost structure
+        assert isinstance(cost, (int, float))
+        assert cost >= 0
+
+        print(f"✅ Claude Opus 4 reasoning test passed! Response: {response[:150]}...")
+
+    except Exception as e:
+        # If user doesn't have access to Opus 4, we'll get a specific error
+        error_msg = str(e).lower()
+        if any(
+            access_error in error_msg
+            for access_error in [
+                "model not found",
+                "invalid model",
+                "not available",
+                "access",
+                "permission",
+                "unauthorized",
+            ]
+        ):
+            pytest.skip(f"Claude Opus 4 model not accessible: {e}")
+        else:
+            # Re-raise if it's a different error
+            raise
+
+
+@pytest.mark.skipif(
+    not os.getenv("ANTHROPIC_API_KEY"), reason="Anthropic API key not found"
+)
+def test_call_ai_claude_37_reasoning():
+    """Integration test: Test call_ai wrapper with Anthropic Claude 3.7 Sonnet with extended thinking"""
+
+    # Test mathematical reasoning problem
+    messages = [
+        {
+            "role": "system",
+            "content": "You are a helpful assistant. Solve mathematical problems carefully with detailed reasoning.",
+        },
+        {
+            "role": "user",
+            "content": "What is 23 × 17? Calculate this step by step using any method you prefer.",
+        },
+    ]
+
+    # Test with Claude 3.7 Sonnet (returns full thinking output, not summarized)
+    response, cost = call_ai(
+        model="anthropic/claude-3-7-sonnet-20250219",
+        messages=messages,
+        temperature=1,  # Required for thinking models
+        max_tokens=10000,  # Needs to be > thinking budget
+        thinking={
+            "type": "enabled",
+            "budget_tokens": 8000,
+        },  # Larger budget for detailed thinking
+    )
+
+    # Validate response
+    assert isinstance(response, str)
+    assert len(response) > 0
+    # 23 × 17 = 391
+    assert (
+        "391" in response
+    ), f"Expected calculation result '391' in response, got: {response}"
+
+    # Validate cost structure
+    assert isinstance(cost, (int, float))
+    assert cost >= 0
+
+    print(f"✅ Claude 3.7 Sonnet reasoning test passed! Response: {response[:150]}...")
+
+
+@pytest.mark.skipif(
+    not os.getenv("ANTHROPIC_API_KEY"), reason="Anthropic API key not found"
+)
+def test_anthropic_reasoning_model_detection():
+    """Test that we can properly detect which Anthropic models support extended thinking"""
+
+    from wraipperz.api.llm import AnthropicProvider
+
+    provider = AnthropicProvider()
+
+    # Test reasoning model detection
+    assert provider.supports_extended_thinking("anthropic/claude-opus-4-20250514")
+    assert provider.supports_extended_thinking("anthropic/claude-sonnet-4-20250514")
+    assert provider.supports_extended_thinking("anthropic/claude-3-7-sonnet-20250219")
+
+    # Test non-reasoning models
+    assert not provider.supports_extended_thinking(
+        "anthropic/claude-3-5-sonnet-20240620"
+    )
+    assert not provider.supports_extended_thinking("anthropic/claude-3-haiku-20240307")
+
+    print("✅ Anthropic reasoning model detection works correctly!")
+
+
+@pytest.mark.skipif(
+    not os.getenv("ANTHROPIC_API_KEY"), reason="Anthropic API key not found"
+)
+def test_claude_reasoning_with_image_analysis():
+    """Integration test: Test Claude reasoning model with image analysis and extended thinking"""
+
+    # Create messages with image using MessageBuilder for complex visual reasoning
+    messages = (
+        MessageBuilder()
+        .add_system(
+            "You are a helpful assistant. Analyze images carefully and think through your observations step by step."
+        )
+        .add_user(
+            "Look at this image carefully. What color is the main shape? Think through what you observe and provide a detailed analysis."
+        )
+        .add_image(str(TEST_IMAGE_PATH))
+        .build()
+    )
+
+    # Test reasoning with image analysis
+    response, cost = call_ai(
+        model="anthropic/claude-sonnet-4-20250514",
+        messages=messages,
+        temperature=1,  # Required for thinking models
+        max_tokens=1500,  # Needs to be > 1024 to accommodate minimum thinking budget
+        thinking=True,  # Enable extended thinking for image analysis
+    )
+
+    # Validate response
+    assert isinstance(response, str)
+    assert len(response) > 0
+    assert (
+        "red" in response.lower()
+    ), f"Expected response to contain 'red', got: {response}"
+
+    # Validate cost structure
+    assert isinstance(cost, (int, float))
+    assert cost >= 0
+
+    print(
+        f"✅ Claude reasoning with image analysis test passed! Response: {response[:150]}..."
+    )
+
+
+@pytest.mark.skipif(
+    not os.getenv("ANTHROPIC_API_KEY"), reason="Anthropic API key not found"
+)
+def test_claude_reasoning_parameter_constraints():
+    """Test that Claude reasoning models properly handle parameter constraints"""
+
+    messages = [
+        {"role": "user", "content": "What is 12 + 8? Think through this calculation."}
+    ]
+
+    # Test with parameters that should be adjusted for thinking compatibility
+    response, cost = call_ai(
+        model="anthropic/claude-sonnet-4-20250514",
+        messages=messages,
+        temperature=0.8,  # Will be overridden to 1 for thinking models
+        max_tokens=2500,  # Needs to be > thinking budget
+        top_p=0.5,  # Should be adjusted to ≥ 0.95 for thinking
+        top_k=40,  # Should be removed for thinking
+        thinking={"type": "enabled", "budget_tokens": 2000},
+    )
+
+    # Should still work despite parameter adjustments
+    assert isinstance(response, str)
+    assert len(response) > 0
+    assert "20" in response, f"Expected '20' in response, got: {response}"
+
+    # Validate cost structure
+    assert isinstance(cost, (int, float))
+    assert cost >= 0
+
+    print("✅ Claude reasoning parameter constraints test passed!")

@@ -431,6 +431,26 @@ class OpenAIProvider(AIProvider):
 
 
 class AnthropicProvider(AIProvider):
+    """
+    Anthropic Claude provider with support for extended thinking (reasoning) models.
+
+    Extended thinking gives Claude enhanced reasoning capabilities for complex tasks,
+    allowing it to show its step-by-step thought process before delivering a final answer.
+
+    Supported reasoning models:
+    - Claude Opus 4 (claude-opus-4-20250514): Most capable model with superior reasoning
+    - Claude Sonnet 4 (claude-sonnet-4-20250514): High-performance model with reasoning
+    - Claude 3.7 Sonnet (claude-3-7-sonnet-20250219): Extended thinking with full output
+
+    Usage with extended thinking:
+    - Pass thinking=True to enable with automatic budget calculation
+    - Pass thinking={"type": "enabled", "budget_tokens": 10000} for manual control
+    - Minimum budget is 1,024 tokens, recommended 16k+ for complex tasks
+    - Claude 4 models return summarized thinking, Claude 3.7 returns full thinking
+
+    Note: Extended thinking may increase response time and token usage.
+    """
+
     supported_models = [
         "anthropic/claude-3-7-sonnet-20250219",
         "anthropic/claude-3-5-sonnet-20241022",
@@ -445,6 +465,13 @@ class AnthropicProvider(AIProvider):
         "anthropic/claude-sonnet-4-20250514",
     ]
 
+    # Models that support extended thinking (reasoning capabilities)
+    extended_thinking_models = [
+        "anthropic/claude-opus-4-20250514",
+        "anthropic/claude-sonnet-4-20250514",
+        "anthropic/claude-3-7-sonnet-20250219",
+    ]
+
     def __init__(self, api_key=None):
         self.sync_client = anthropic.Anthropic(
             api_key=api_key or os.getenv("ANTHROPIC_API_KEY")
@@ -456,6 +483,14 @@ class AnthropicProvider(AIProvider):
         self.supported_models = [
             f"anthropic/{model.id}" for model in self.sync_client.models.list(limit=30)
         ]
+
+    def supports_extended_thinking(self, model):
+        """Check if a model supports extended thinking (reasoning capabilities)"""
+        return model in self.extended_thinking_models
+
+    def _is_reasoning_model(self, model):
+        """Check if the model supports extended thinking - alias for backwards compatibility"""
+        return self.supports_extended_thinking(model)
 
     def _prepare_messages(self, messages):
         """Prepare messages for Claude API, handling both text, images, and caching."""
@@ -696,12 +731,33 @@ class AnthropicProvider(AIProvider):
 
             # If thinking is True (boolean), convert to proper format
             if thinking is True:
-                thinking = {
-                    "type": "enabled",
-                    "budget_tokens": min(
-                        max_tokens // 2, 1024
-                    ),  # Use half of max_tokens or 1024, whichever is smaller
-                }
+                # According to docs: minimum budget is 1,024 tokens
+                # Budget MUST be less than max_tokens
+                min_budget = 1024
+
+                # Ensure we have room for both thinking and response
+                if max_tokens <= min_budget:
+                    # If max_tokens is too small, use a smaller budget
+                    budget_tokens = max(256, max_tokens - 100)
+                else:
+                    # Standard calculation with safety margin
+                    max_budget = max_tokens - 100  # Leave room for response
+                    budget_tokens = max(min_budget, min(max_budget, max_tokens // 2))
+
+                thinking = {"type": "enabled", "budget_tokens": budget_tokens}
+
+            # Handle thinking parameter compatibility constraints BEFORE creating api_params
+            if thinking:
+                # Adjust top_p if needed
+                if "top_p" in kwargs and kwargs["top_p"] < 0.95:
+                    # Docs say top_p can be set between 0.95 and 1 when thinking is enabled
+                    kwargs["top_p"] = max(kwargs["top_p"], 0.95)
+
+                # Remove unsupported parameters for thinking
+                thinking_incompatible = ["top_k"]
+                for param in thinking_incompatible:
+                    if param in kwargs:
+                        kwargs.pop(param)
 
             # Create API call parameters
             api_params = {
@@ -717,17 +773,19 @@ class AnthropicProvider(AIProvider):
 
             # Add thinking parameter only if it's provided
             if thinking:
+                # Temperature MUST be set to 1 when thinking is enabled
+                api_params["temperature"] = 1
                 api_params["thinking"] = thinking
 
             response = self.sync_client.messages.create(**api_params)
 
             # Handle thinking content if present
             if hasattr(response, "content") and len(response.content) > 1:
-                # Check if any content block is of type "thinking"
+                # Check if any content block is of type "thinking" or "redacted_thinking"
                 thinking_blocks = [
                     block
                     for block in response.content
-                    if getattr(block, "type", None) == "thinking"
+                    if getattr(block, "type", None) in ["thinking", "redacted_thinking"]
                 ]
                 if thinking_blocks:
                     # You can log or process thinking blocks separately if needed
@@ -761,12 +819,33 @@ class AnthropicProvider(AIProvider):
 
             # If thinking is True (boolean), convert to proper format
             if thinking is True:
-                thinking = {
-                    "type": "enabled",
-                    "budget_tokens": min(
-                        max_tokens // 2, 1024
-                    ),  # Use half of max_tokens or 1024, whichever is smaller
-                }
+                # According to docs: minimum budget is 1,024 tokens
+                # Budget MUST be less than max_tokens
+                min_budget = 1024
+
+                # Ensure we have room for both thinking and response
+                if max_tokens <= min_budget:
+                    # If max_tokens is too small, use a smaller budget
+                    budget_tokens = max(256, max_tokens - 100)
+                else:
+                    # Standard calculation with safety margin
+                    max_budget = max_tokens - 100  # Leave room for response
+                    budget_tokens = max(min_budget, min(max_budget, max_tokens // 2))
+
+                thinking = {"type": "enabled", "budget_tokens": budget_tokens}
+
+            # Handle thinking parameter compatibility constraints BEFORE creating api_params
+            if thinking:
+                # Adjust top_p if needed
+                if "top_p" in kwargs and kwargs["top_p"] < 0.95:
+                    # Docs say top_p can be set between 0.95 and 1 when thinking is enabled
+                    kwargs["top_p"] = max(kwargs["top_p"], 0.95)
+
+                # Remove unsupported parameters for thinking
+                thinking_incompatible = ["top_k"]
+                for param in thinking_incompatible:
+                    if param in kwargs:
+                        kwargs.pop(param)
 
             # Create API call parameters
             api_params = {
@@ -782,17 +861,19 @@ class AnthropicProvider(AIProvider):
 
             # Add thinking parameter only if it's provided
             if thinking:
+                # Temperature MUST be set to 1 when thinking is enabled
+                api_params["temperature"] = 1
                 api_params["thinking"] = thinking
 
             response = await self.async_client.messages.create(**api_params)
 
             # Handle thinking content if present
             if hasattr(response, "content") and len(response.content) > 1:
-                # Check if any content block is of type "thinking"
+                # Check if any content block is of type "thinking" or "redacted_thinking"
                 thinking_blocks = [
                     block
                     for block in response.content
-                    if getattr(block, "type", None) == "thinking"
+                    if getattr(block, "type", None) in ["thinking", "redacted_thinking"]
                 ]
                 if thinking_blocks:
                     # You can log or process thinking blocks separately if needed
