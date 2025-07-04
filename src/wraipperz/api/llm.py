@@ -4,6 +4,7 @@ import io
 import json
 import mimetypes
 import os
+import time
 
 # from tokencost import calculate_prompt_cost, calculate_completion_cost
 from pathlib import Path
@@ -44,6 +45,15 @@ except ImportError:
     boto3 = None
     BotoCoreError = Exception
     ClientError = Exception
+
+# Vertex AI imports
+try:
+    from anthropic import AnthropicVertex
+
+    VERTEX_AVAILABLE = True
+except ImportError:
+    VERTEX_AVAILABLE = False
+    AnthropicVertex = None
 
 from .messages import Message
 
@@ -892,6 +902,313 @@ class AnthropicProvider(AIProvider):
             raise e
 
 
+class VertexAIProvider(AIProvider):
+    """
+    Vertex AI provider for Anthropic Claude models running on Google Cloud Vertex AI.
+
+    This provider uses the Anthropic Vertex AI client to access Claude models through
+    Google Cloud's Vertex AI platform. It supports all the same features as the
+    regular Anthropic provider but routes through Vertex AI infrastructure.
+
+    Required environment variables:
+    - VERTEX_PROJECT_ID: Your Google Cloud project ID
+    - VERTEX_LOCATION: The region where your Vertex AI resources are located
+    - GOOGLE_APPLICATION_CREDENTIALS: Path to your service account key file
+
+    Supported models are the same as available in Vertex AI Model Garden.
+    """
+
+    supported_models = [
+        "vertex/claude-opus-4@20250514",
+        "vertex/claude-sonnet-4@20250514",
+    ]
+
+    def __init__(self, project_id=None, location=None):
+        if not VERTEX_AVAILABLE:
+            raise ImportError(
+                "anthropic[vertex] is required for VertexAIProvider. Install with: pip install 'anthropic[vertex]'"
+            )
+
+        self.project_id = project_id or os.getenv("VERTEX_PROJECT_ID")
+        self.location = location or os.getenv("VERTEX_LOCATION", "us-east5")
+
+        if not self.project_id:
+            raise ValueError("VERTEX_PROJECT_ID environment variable is required")
+
+        try:
+            self.sync_client = AnthropicVertex(
+                project_id=self.project_id, region=self.location
+            )
+            self.async_client = AnthropicVertex(
+                project_id=self.project_id, region=self.location
+            )
+        except Exception as e:
+            raise ValueError(f"Failed to initialize Vertex AI client: {e}")
+
+    def _prepare_messages(self, messages):
+        """Prepare messages for Vertex AI Claude API, handling both text and images."""
+        system_content = []
+        user_messages = []
+
+        for message in messages:
+            if message["role"] == "system":
+                system_msg = {"type": "text", "text": message["content"]}
+                # Add cache_control if present
+                if "cache_control" in message:
+                    system_msg["cache_control"] = message["cache_control"]
+                system_content.append(system_msg)
+            else:
+                if isinstance(message["content"], str):
+                    user_messages.append(
+                        {"role": message["role"], "content": message["content"]}
+                    )
+                elif isinstance(message["content"], list):
+                    prepared_content = []
+                    for item in message["content"]:
+                        if isinstance(item, dict):
+                            if item.get("type") == "text":
+                                prepared_content.append(
+                                    {"type": "text", "text": item["text"]}
+                                )
+                            elif item.get("type") == "image_url":
+                                # Handle both local files and URLs
+                                image_url = item["image_url"]["url"]
+                                if image_url.startswith(("http://", "https://")):
+                                    prepared_content.append(
+                                        {
+                                            "type": "image",
+                                            "source": {"type": "url", "url": image_url},
+                                        }
+                                    )
+                                else:
+                                    # For local files, use base64
+                                    image_data = self._process_image(image_url)
+                                    prepared_content.append(
+                                        {
+                                            "type": "image",
+                                            "source": {
+                                                "type": "base64",
+                                                "media_type": self._get_media_type(
+                                                    image_url
+                                                ),
+                                                "data": image_data,
+                                            },
+                                        }
+                                    )
+                    user_messages.append(
+                        {"role": message["role"], "content": prepared_content}
+                    )
+
+        return system_content, user_messages
+
+    def _process_image(self, image_path):
+        """Process image with size constraints for Vertex AI."""
+        MAX_IMAGE_SIZE = 5 * 1024 * 1024  # 5MB in bytes
+
+        if isinstance(image_path, (str, Path)):
+            path = Path(image_path)
+            if path.is_file():
+                # Read the image file
+                with open(path, "rb") as image_file:
+                    image_data = image_file.read()
+
+                # Check if image needs resizing
+                if len(image_data) > MAX_IMAGE_SIZE:
+                    # Open with PIL and resize
+                    img = Image.open(io.BytesIO(image_data))
+
+                    # Calculate scaling factor to get under the limit
+                    scale = 0.5
+                    img_resized = img.resize(
+                        (int(img.width * scale), int(img.height * scale))
+                    )
+
+                    # Keep resizing if still too large
+                    buffer = io.BytesIO()
+                    img_format = img.format or "JPEG"
+                    img_resized.save(buffer, format=img_format)
+                    resized_data = buffer.getvalue()
+
+                    while len(resized_data) > MAX_IMAGE_SIZE and scale > 0.1:
+                        scale *= 0.8
+                        img_resized = img.resize(
+                            (int(img.width * scale), int(img.height * scale))
+                        )
+                        buffer = io.BytesIO()
+                        img_resized.save(buffer, format=img_format)
+                        resized_data = buffer.getvalue()
+
+                    return base64.b64encode(resized_data).decode("utf-8")
+
+                return base64.b64encode(image_data).decode("utf-8")
+            elif str(image_path).startswith(("http://", "https://")):
+                response = requests.get(str(image_path))
+                response.raise_for_status()
+                image_data = response.content
+
+                # Check if image needs resizing
+                if len(image_data) > MAX_IMAGE_SIZE:
+                    img = Image.open(io.BytesIO(image_data))
+                    scale = 0.5
+                    img_resized = img.resize(
+                        (int(img.width * scale), int(img.height * scale))
+                    )
+
+                    buffer = io.BytesIO()
+                    img_format = img.format or "JPEG"
+                    img_resized.save(buffer, format=img_format)
+                    resized_data = buffer.getvalue()
+
+                    while len(resized_data) > MAX_IMAGE_SIZE and scale > 0.1:
+                        scale *= 0.8
+                        img_resized = img.resize(
+                            (int(img.width * scale), int(img.height * scale))
+                        )
+                        buffer = io.BytesIO()
+                        img_resized.save(buffer, format=img_format)
+                        resized_data = buffer.getvalue()
+
+                    return base64.b64encode(resized_data).decode("utf-8")
+
+                return base64.b64encode(image_data).decode("utf-8")
+            else:
+                raise ValueError(f"File not found: {image_path}")
+        elif isinstance(image_path, bytes):
+            image_data = image_path
+
+            # Check if image needs resizing
+            if len(image_data) > MAX_IMAGE_SIZE:
+                img = Image.open(io.BytesIO(image_data))
+                scale = 0.5
+                img_resized = img.resize(
+                    (int(img.width * scale), int(img.height * scale))
+                )
+
+                buffer = io.BytesIO()
+                img_format = img.format or "JPEG"
+                img_resized.save(buffer, format=img_format)
+                resized_data = buffer.getvalue()
+
+                while len(resized_data) > MAX_IMAGE_SIZE and scale > 0.1:
+                    scale *= 0.8
+                    img_resized = img.resize(
+                        (int(img.width * scale), int(img.height * scale))
+                    )
+                    buffer = io.BytesIO()
+                    img_resized.save(buffer, format=img_format)
+                    resized_data = buffer.getvalue()
+
+                return base64.b64encode(resized_data).decode("utf-8")
+
+            return base64.b64encode(image_data).decode("utf-8")
+        elif isinstance(image_path, Image.Image):
+            img = image_path
+            img_format = getattr(img, "format", "PNG") or "PNG"
+
+            # First try with original size
+            buffer = io.BytesIO()
+            img.save(buffer, format=img_format)
+            image_data = buffer.getvalue()
+
+            # Check if image needs resizing
+            if len(image_data) > MAX_IMAGE_SIZE:
+                scale = 0.5
+                img_resized = img.resize(
+                    (int(img.width * scale), int(img.height * scale))
+                )
+
+                buffer = io.BytesIO()
+                img_resized.save(buffer, format=img_format)
+                resized_data = buffer.getvalue()
+
+                while len(resized_data) > MAX_IMAGE_SIZE and scale > 0.1:
+                    scale *= 0.8
+                    img_resized = img.resize(
+                        (int(img.width * scale), int(img.height * scale))
+                    )
+                    buffer = io.BytesIO()
+                    img_resized.save(buffer, format=img_format)
+                    resized_data = buffer.getvalue()
+
+                return base64.b64encode(resized_data).decode("utf-8")
+
+            return base64.b64encode(image_data).decode("utf-8")
+        else:
+            raise ValueError(f"Unsupported image format: {type(image_path)}")
+
+    def _get_media_type(self, file_path):
+        """Get media type for image files."""
+        if isinstance(file_path, str) and file_path.startswith(("http://", "https://")):
+            response = requests.head(file_path)
+            return response.headers.get("content-type", "image/jpeg")
+        mime_type, _ = mimetypes.guess_type(file_path)
+        return mime_type or "image/jpeg"
+
+    def call_ai(
+        self,
+        messages,
+        temperature,
+        max_tokens,
+        model="vertex/claude-sonnet-4@20250514",
+        **kwargs,
+    ):
+        try:
+            system_content, user_messages = self._prepare_messages(messages)
+
+            # Create API call parameters
+            api_params = {
+                "model": model.split("/")[-1],  # Remove vertex/ prefix
+                "max_tokens": max_tokens,
+                "temperature": temperature,
+                "system": system_content,
+                "messages": user_messages
+                if user_messages
+                else [{"role": "user", "content": "Follow the system prompt."}],
+                **kwargs,
+            }
+
+            response = self.sync_client.messages.create(**api_params)
+            return response.content[0].text
+        except Exception as e:
+            raise e
+
+    async def call_ai_async(
+        self,
+        messages,
+        temperature,
+        max_tokens,
+        model="vertex/claude-sonnet-4@20250514",
+        **kwargs,
+    ):
+        try:
+            system_content, user_messages = self._prepare_messages(messages)
+
+            # Create API call parameters
+            api_params = {
+                "model": model.split("/")[-1],  # Remove vertex/ prefix
+                "max_tokens": max_tokens,
+                "temperature": temperature,
+                "system": system_content,
+                "messages": user_messages
+                if user_messages
+                else [{"role": "user", "content": "Follow the system prompt."}],
+                **kwargs,
+            }
+
+            response = await self.async_client.messages.create(**api_params)
+            return response.content[0].text
+        except Exception as e:
+            raise e
+
+    def generate(self, messages, temperature, max_tokens, model=None, **kwargs):
+        raise NotImplementedError("This provider does not support image generation")
+
+    async def generate_async(
+        self, messages, temperature, max_tokens, model=None, **kwargs
+    ):
+        raise NotImplementedError("This provider does not support image generation")
+
+
 class GeminiProvider(AIProvider):
     supported_models = [
         "gemini/gemini-1.0-pro-vision-latest",
@@ -1065,14 +1382,14 @@ class GeminiProvider(AIProvider):
             ):
                 contents = user_messages[0]["content"]
             else:
-                # Handle multiple messages or messages with images
+                # Handle multiple messages or messages with images and videos
                 contents = []
                 for message in user_messages:
                     if isinstance(message["content"], str):
                         contents.append(message["content"])
                     elif isinstance(message["content"], list):
                         text_parts = []
-                        image_parts = []
+                        media_parts = []
                         for item in message["content"]:
                             if item.get("type") == "text":
                                 text_parts.append(item["text"])
@@ -1080,20 +1397,38 @@ class GeminiProvider(AIProvider):
                                 image_path = item["image_url"]["url"]
                                 with open(image_path, "rb") as f:
                                     image_data = f.read()
-                                image_parts.append(
+                                media_parts.append(
                                     types.Part.from_bytes(
                                         data=image_data, mime_type="image/jpeg"
                                     )
                                 )
+                            elif item.get("type") == "video_url":
+                                # Support video processing
+                                video_path = item["video_url"]["url"]
+                                video_file = self.process_video(video_path)
+                                media_parts.append(video_file)
 
                         # Always ensure there's text content
                         if not text_parts:
-                            text_parts.append("Consider this image in your response.")
+                            text_parts.append("Consider this media in your response.")
 
                         # Combine text parts into a single string
                         contents.append(" ".join(text_parts))
-                        # Add image parts after text
-                        contents.extend(image_parts)
+                        # Add media parts after text
+                        contents.extend(media_parts)
+
+            # Extract thinking configuration from kwargs
+            thinking_config = kwargs.pop("thinking_config", None)
+            thinking_budget = kwargs.pop("thinking_budget", None)
+
+            # Handle thinking configuration
+            config_kwargs = {}
+            if thinking_config:
+                config_kwargs["thinking_config"] = thinking_config
+            elif thinking_budget:
+                config_kwargs["thinking_config"] = types.ThinkingConfig(
+                    thinking_budget=thinking_budget
+                )
 
             response = self.client.models.generate_content(
                 model=model.split("/")[-1],
@@ -1101,7 +1436,7 @@ class GeminiProvider(AIProvider):
                 config=types.GenerateContentConfig(
                     temperature=temperature,
                     max_output_tokens=max_tokens,
-                    system_instruction=system_instruction,  # Pass system instruction directly in config
+                    system_instruction=system_instruction,
                     safety_settings=[
                         types.SafetySetting(
                             category="HARM_CATEGORY_HATE_SPEECH", threshold="BLOCK_NONE"
@@ -1118,6 +1453,7 @@ class GeminiProvider(AIProvider):
                             threshold="BLOCK_NONE",
                         ),
                     ],
+                    **config_kwargs,
                 ),
             )
             return response.text
@@ -1148,14 +1484,14 @@ class GeminiProvider(AIProvider):
             ):
                 contents = user_messages[0]["content"]
             else:
-                # Handle multiple messages or messages with images
+                # Handle multiple messages or messages with images and videos
                 contents = []
                 for message in user_messages:
                     if isinstance(message["content"], str):
                         contents.append(message["content"])
                     elif isinstance(message["content"], list):
                         text_parts = []
-                        image_parts = []
+                        media_parts = []
                         for item in message["content"]:
                             if item.get("type") == "text":
                                 text_parts.append(item["text"])
@@ -1163,20 +1499,38 @@ class GeminiProvider(AIProvider):
                                 image_path = item["image_url"]["url"]
                                 with open(image_path, "rb") as f:
                                     image_data = f.read()
-                                image_parts.append(
+                                media_parts.append(
                                     types.Part.from_bytes(
                                         data=image_data, mime_type="image/jpeg"
                                     )
                                 )
+                            elif item.get("type") == "video_url":
+                                # Support video processing
+                                video_path = item["video_url"]["url"]
+                                video_file = self.process_video(video_path)
+                                media_parts.append(video_file)
 
                         # Always ensure there's text content
                         if not text_parts:
-                            text_parts.append("Consider this image in your response.")
+                            text_parts.append("Consider this media in your response.")
 
                         # Combine text parts into a single string
                         contents.append(" ".join(text_parts))
-                        # Add image parts after text
-                        contents.extend(image_parts)
+                        # Add media parts after text
+                        contents.extend(media_parts)
+
+            # Extract thinking configuration from kwargs
+            thinking_config = kwargs.pop("thinking_config", None)
+            thinking_budget = kwargs.pop("thinking_budget", None)
+
+            # Handle thinking configuration
+            config_kwargs = {}
+            if thinking_config:
+                config_kwargs["thinking_config"] = thinking_config
+            elif thinking_budget:
+                config_kwargs["thinking_config"] = types.ThinkingConfig(
+                    thinking_budget=thinking_budget
+                )
 
             response = self.client.models.generate_content(
                 model=model.split("/")[-1],
@@ -1184,7 +1538,7 @@ class GeminiProvider(AIProvider):
                 config=types.GenerateContentConfig(
                     temperature=temperature,
                     max_output_tokens=max_tokens,
-                    system_instruction=system_instruction,  # Pass system instruction directly in config
+                    system_instruction=system_instruction,
                     safety_settings=[
                         types.SafetySetting(
                             category="HARM_CATEGORY_HATE_SPEECH", threshold="BLOCK_NONE"
@@ -1201,23 +1555,38 @@ class GeminiProvider(AIProvider):
                             threshold="BLOCK_NONE",
                         ),
                     ],
+                    **config_kwargs,
                 ),
             )
             return response.text
         except Exception as e:
             raise e
 
-    def _process_video(self, video_path):
-        video_file = genai.upload_file(path=video_path)
+    def process_video(self, video_path):
+        """
+        Public method to process and upload video files to Gemini.
+
+        Args:
+            video_path: Path to the video file
+
+        Returns:
+            Uploaded video file object that can be used in generate_content
+        """
+        video_file = self.client.files.upload(file=video_path)
 
         # Wait until the uploaded video is available
         while video_file.state.name == "PROCESSING":
-            video_file = genai.get_file(video_file.name)
+            time.sleep(2)
+            video_file = self.client.files.get(name=video_file.name)
 
         if video_file.state.name == "FAILED":
-            raise ValueError(video_file.state.name)
+            raise ValueError(f"Video processing failed: {video_file.state.name}")
 
         return video_file
+
+    def _process_video(self, video_path):
+        # Keep the old private method for backward compatibility
+        return self.process_video(video_path)
 
     def generate(
         self,
@@ -1244,38 +1613,40 @@ class GeminiProvider(AIProvider):
             ):
                 contents = [user_messages[0]["content"]]
             else:
-                # Handle multiple messages or messages with images
+                # Handle multiple messages or messages with images and videos
                 contents = []
                 for message in user_messages:
                     if isinstance(message["content"], str):
                         contents.append(message["content"])
                     elif isinstance(message["content"], list):
                         text_parts = []
-                        image_parts = []
+                        media_parts = []
                         for item in message["content"]:
                             if item.get("type") == "text":
                                 text_parts.append(item["text"])
                             elif item.get("type") == "image_url":
                                 image_path = item["image_url"]["url"]
-                                # Handle PIL Image
-                                if isinstance(image_path, Image.Image):
-                                    image_parts.append(image_path)
-                                # Handle file path
-                                else:
-                                    with open(image_path, "rb") as f:
-                                        image_data = f.read()
-                                    image_parts.append(
-                                        Image.open(io.BytesIO(image_data))
+                                with open(image_path, "rb") as f:
+                                    image_data = f.read()
+                                media_parts.append(
+                                    types.Part.from_bytes(
+                                        data=image_data, mime_type="image/jpeg"
                                     )
+                                )
+                            elif item.get("type") == "video_url":
+                                # Support video processing
+                                video_path = item["video_url"]["url"]
+                                video_file = self.process_video(video_path)
+                                media_parts.append(video_file)
 
                         # Always ensure there's text content
                         if not text_parts:
-                            text_parts.append("Consider this image in your response.")
+                            text_parts.append("Consider this media in your response.")
 
-                        # Add text as one part
+                        # Combine text parts into a single string
                         contents.append(" ".join(text_parts))
-                        # Add image parts
-                        contents.extend(image_parts)
+                        # Add media parts after text
+                        contents.extend(media_parts)
 
             # Configure response modalities to include both text and image
             config = types.GenerateContentConfig(
@@ -2113,6 +2484,18 @@ class AIManagerSingleton:
                     cls._instance.add_provider(AnthropicProvider())
                 except Exception as e:
                     print(f"Error adding Anthropic provider: {e}")
+
+            # Add Vertex AI provider if required environment variables are set
+            if (
+                VERTEX_AVAILABLE
+                and os.getenv("VERTEX_PROJECT_ID")
+                and os.getenv("GOOGLE_APPLICATION_CREDENTIALS")
+            ):
+                try:
+                    cls._instance.add_provider(VertexAIProvider())
+                except Exception as e:
+                    print(f"Error adding Vertex AI provider: {e}")
+
             if os.getenv("GOOGLE_API_KEY"):
                 try:
                     cls._instance.add_provider(GeminiProvider())

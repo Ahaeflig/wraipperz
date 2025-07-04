@@ -49,6 +49,20 @@ class Message:
         )
         return self
 
+    def add_video(self, video_path: Union[str, Path]) -> Message:
+        """Add a video content item to the message.
+
+        Args:
+            video_path: Path to the video file or URL
+
+        Returns:
+            self for method chaining
+        """
+        self.content.append(
+            {"type": "video_url", "video_url": {"url": str(video_path)}}
+        )
+        return self
+
     def to_dict(self) -> Dict:
         """Convert the message to a dictionary format expected by AI providers.
 
@@ -116,9 +130,28 @@ class MessageBuilder:
         """
         if not self.messages or self.messages[-1].role != "user":
             self.add_user()
-        self.messages[-1].add_image(image_path)
         if text:
             self.messages[-1].add_text(text)
+        self.messages[-1].add_image(image_path)
+        return self
+
+    def add_video(
+        self, video_path: Union[str, Path], text: Optional[str] = None
+    ) -> MessageBuilder:
+        """Add a video with optional text to the current or new user message.
+
+        Args:
+            video_path: Path to the video file or URL
+            text: Optional text to accompany the video
+
+        Returns:
+            self for method chaining
+        """
+        if not self.messages or self.messages[-1].role != "user":
+            self.add_user()
+        if text:
+            self.messages[-1].add_text(text)
+        self.messages[-1].add_video(video_path)
         return self
 
     def build(self) -> List[Dict]:
@@ -138,11 +171,15 @@ from agency.messages import MessageBuilder
 messages = (
     MessageBuilder()
     .add_system("You are a helpful AI assistant.")
-    .add_user("Hello! Can you help me analyze some images?")
-    .add_assistant("Of course! I'd be happy to help analyze any images you share.")
+    .add_user("Hello! Can you help me analyze some images and videos?")
+    .add_assistant("Of course! I'd be happy to help analyze any images or videos you share.")
     .add_image(
         "path/to/image.jpg",
         "What can you tell me about this picture?"
+    )
+    .add_video(
+        "path/to/video.mp4",
+        "Can you analyze what's happening in this video?"
     )
     .build()
 )
