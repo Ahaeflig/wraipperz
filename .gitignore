@@ -14,3 +14,6 @@ wheels/
 # for package development
 publish.py
 gen_models_name.py
+
+
+*.json
