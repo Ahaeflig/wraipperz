@@ -2368,6 +2368,12 @@ class AIManager:
         | retry_if_exception_type(google_exceptions.ResourceExhausted)
         | retry_if_exception_type(anthropic.InternalServerError)
         | retry_if_exception_type(
+            anthropic.APIStatusError
+        )  # Catches HTTP 529 overloaded errors
+        | retry_if_exception_type(anthropic.APITimeoutError)
+        | retry_if_exception_type(anthropic.APIConnectionError)
+        | retry_if_exception_type(anthropic.RateLimitError)
+        | retry_if_exception_type(
             ClientError
         )  # AWS Bedrock errors including ThrottlingException
         | retry_if_exception_type(BotoCoreError)
@@ -2393,6 +2399,12 @@ def call_ai_with_retry(ai_manager, messages, temperature, max_tokens, model, **k
         | retry_if_exception_type(google_exceptions.ServiceUnavailable)
         | retry_if_exception_type(google_exceptions.ResourceExhausted)
         | retry_if_exception_type(anthropic.InternalServerError)
+        | retry_if_exception_type(
+            anthropic.APIStatusError
+        )  # Catches HTTP 529 overloaded errors
+        | retry_if_exception_type(anthropic.APITimeoutError)
+        | retry_if_exception_type(anthropic.APIConnectionError)
+        | retry_if_exception_type(anthropic.RateLimitError)
         | retry_if_exception_type(
             ClientError
         )  # AWS Bedrock errors including ThrottlingException
@@ -2423,6 +2435,12 @@ async def call_ai_async_with_retry(
         | retry_if_exception_type(google_exceptions.ResourceExhausted)
         | retry_if_exception_type(anthropic.InternalServerError)
         | retry_if_exception_type(
+            anthropic.APIStatusError
+        )  # Catches HTTP 529 overloaded errors
+        | retry_if_exception_type(anthropic.APITimeoutError)
+        | retry_if_exception_type(anthropic.APIConnectionError)
+        | retry_if_exception_type(anthropic.RateLimitError)
+        | retry_if_exception_type(
             ClientError
         )  # AWS Bedrock errors including ThrottlingException
         | retry_if_exception_type(BotoCoreError)
@@ -2448,6 +2466,12 @@ def generate_with_retry(ai_manager, messages, temperature, max_tokens, model, **
         | retry_if_exception_type(google_exceptions.ServiceUnavailable)
         | retry_if_exception_type(google_exceptions.ResourceExhausted)
         | retry_if_exception_type(anthropic.InternalServerError)
+        | retry_if_exception_type(
+            anthropic.APIStatusError
+        )  # Catches HTTP 529 overloaded errors
+        | retry_if_exception_type(anthropic.APITimeoutError)
+        | retry_if_exception_type(anthropic.APIConnectionError)
+        | retry_if_exception_type(anthropic.RateLimitError)
         | retry_if_exception_type(
             ClientError
         )  # AWS Bedrock errors including ThrottlingException
