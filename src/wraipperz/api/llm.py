@@ -440,6 +440,143 @@ class OpenAIProvider(AIProvider):
         return prepared_messages
 
 
+class AzureOpenAIProvider(AIProvider):
+    """
+    Azure OpenAI provider using the OpenAI SDK with Azure endpoints.
+
+    Models are specified as "azure/deployment-name" where deployment-name
+    is the name of your Azure OpenAI deployment.
+
+    Required environment variables:
+    - AZURE_OPENAI_ENDPOINT: Your Azure OpenAI endpoint URL
+    - AZURE_OPENAI_API_KEY: Your Azure OpenAI API key
+
+    Optional:
+    - AZURE_OPENAI_DEPLOYMENTS: Comma-separated list of deployment names
+    """
+
+    def __init__(self, endpoint=None, api_key=None, api_version=None):
+        endpoint = endpoint or os.getenv("AZURE_OPENAI_ENDPOINT")
+        api_key = api_key or os.getenv("AZURE_OPENAI_API_KEY")
+        self.endpoint = endpoint
+
+        if not endpoint:
+            raise ValueError("AZURE_OPENAI_ENDPOINT environment variable is required")
+        if not api_key:
+            raise ValueError("AZURE_OPENAI_API_KEY environment variable is required")
+
+        # Just use the endpoint as provided - don't modify it!
+        self.sync_client = OpenAI(
+            base_url=endpoint,
+            api_key=api_key,
+        )
+        self.async_client = AsyncOpenAI(
+            base_url=endpoint,
+            api_key=api_key,
+        )
+
+        # Azure deployments are dynamic, so we'll accept any model with azure/ prefix
+        self.supported_models = []
+
+        # Get configured deployments from environment (optional)
+        # Format: AZURE_OPENAI_DEPLOYMENTS="deployment1,deployment2,deployment3"
+        deployments = os.getenv("AZURE_OPENAI_DEPLOYMENTS", "")
+        if deployments:
+            self.supported_models = [
+                f"azure/{d.strip()}" for d in deployments.split(",") if d.strip()
+            ]
+
+    def call_ai(self, messages, temperature, max_tokens, model, **kwargs):
+        try:
+            # Extract deployment name from model (format: "azure/deployment-name")
+            deployment_name = model.split("/", 1)[1] if "/" in model else model
+
+            # Prepare messages
+            prepared_messages = self._prepare_messages(messages)
+
+            # Call Azure OpenAI exactly like your example
+            response = self.sync_client.chat.completions.create(
+                model=deployment_name,
+                messages=prepared_messages,
+                temperature=temperature,
+                max_tokens=max_tokens,
+                **kwargs,
+            )
+            return response.choices[0].message.content
+        except Exception as e:
+            raise e
+
+    async def call_ai_async(self, messages, temperature, max_tokens, model, **kwargs):
+        try:
+            deployment_name = model.split("/", 1)[1] if "/" in model else model
+            prepared_messages = self._prepare_messages(messages)
+
+            print(deployment_name)
+            response = await self.async_client.chat.completions.create(
+                model=deployment_name,
+                messages=prepared_messages,
+                temperature=temperature,
+                max_tokens=max_tokens,
+                **kwargs,
+            )
+            return response.choices[0].message.content
+        except Exception as e:
+            raise e
+
+    def generate(self, messages, temperature, max_tokens, model=None, **kwargs):
+        raise NotImplementedError("This provider does not support image generation")
+
+    async def generate_async(
+        self, messages, temperature, max_tokens, model=None, **kwargs
+    ):
+        raise NotImplementedError("This provider does not support image generation")
+
+    def _prepare_messages(self, messages):
+        """Prepare messages for Azure OpenAI API - similar to OpenAI but simpler"""
+        prepared_messages = []
+        for message in messages:
+            content = message["content"]
+            if isinstance(content, str):
+                prepared_messages.append({"role": message["role"], "content": content})
+            elif isinstance(content, list):
+                # Azure OpenAI also supports multimodal content
+                prepared_content = []
+                for item in content:
+                    if isinstance(item, dict) and item.get("type") == "text":
+                        prepared_content.append(item)
+                    elif isinstance(item, dict) and item.get("type") == "image_url":
+                        # Process image for Azure (if vision models are deployed)
+                        image_url = item["image_url"]["url"]
+                        if image_url.startswith("data:"):
+                            # Already base64 encoded
+                            prepared_content.append(item)
+                        elif image_url.startswith(("http://", "https://")):
+                            # URL - Azure can handle these directly
+                            prepared_content.append(item)
+                        else:
+                            # Local file - need to encode
+                            with open(image_url, "rb") as img_file:
+                                image_data = base64.b64encode(img_file.read()).decode(
+                                    "utf-8"
+                                )
+                            mime_type, _ = mimetypes.guess_type(image_url)
+                            mime_type = mime_type or "image/jpeg"
+                            prepared_content.append(
+                                {
+                                    "type": "image_url",
+                                    "image_url": {
+                                        "url": f"data:{mime_type};base64,{image_data}"
+                                    },
+                                }
+                            )
+                    else:
+                        prepared_content.append(item)
+                prepared_messages.append(
+                    {"role": message["role"], "content": prepared_content}
+                )
+        return prepared_messages
+
+
 class AnthropicProvider(AIProvider):
     """
     Anthropic Claude provider with support for extended thinking (reasoning) models.
@@ -2232,12 +2369,19 @@ class AIManager:
             if model in provider.supported_models:
                 return provider
 
-            # Special handling for BedrockProvider with ARN-based inference profiles
-            if (
-                hasattr(provider, "__class__")
-                and provider.__class__.__name__ == "BedrockProvider"
-            ):
-                if model.startswith("bedrock/arn:aws:bedrock:"):
+            # Special handling for dynamic model providers
+            if hasattr(provider, "__class__"):
+                # Handle Azure OpenAI with dynamic deployments
+                if (
+                    provider.__class__.__name__ == "AzureOpenAIProvider"
+                    and model.startswith("azure/")
+                ):
+                    return provider
+                # Handle BedrockProvider with ARN-based inference profiles
+                elif (
+                    provider.__class__.__name__ == "BedrockProvider"
+                    and model.startswith("bedrock/arn:aws:bedrock:")
+                ):
                     return provider
 
         raise ValueError(f"No provider found for model: {model}")
@@ -2503,6 +2647,14 @@ class AIManagerSingleton:
                     cls._instance.add_provider(OpenAIProvider())
                 except Exception as e:
                     print(f"Error adding OpenAI provider: {e}")
+
+            # Add Azure OpenAI provider
+            if os.getenv("AZURE_OPENAI_ENDPOINT") and os.getenv("AZURE_OPENAI_API_KEY"):
+                try:
+                    cls._instance.add_provider(AzureOpenAIProvider())
+                except Exception as e:
+                    print(f"Error adding Azure OpenAI provider: {e}")
+
             if os.getenv("ANTHROPIC_API_KEY"):
                 try:
                     cls._instance.add_provider(AnthropicProvider())

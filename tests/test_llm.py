@@ -1559,3 +1559,62 @@ def test_claude_reasoning_parameter_constraints():
     assert cost >= 0
 
     print("✅ Claude reasoning parameter constraints test passed!")
+
+
+# ===== AZURE OPENAI PROVIDER TESTS =====
+
+
+@pytest.mark.skipif(
+    not (os.getenv("AZURE_OPENAI_ENDPOINT") and os.getenv("AZURE_OPENAI_API_KEY")),
+    reason="Azure OpenAI credentials not found",
+)
+def test_azure_openai_provider_initialization():
+    """Test that AzureOpenAIProvider initializes correctly with environment variables"""
+
+    from wraipperz.api.llm import AzureOpenAIProvider
+
+    try:
+        # Should initialize successfully if env vars are set
+        provider = AzureOpenAIProvider()
+
+        # Check that it has the expected attributes
+        assert hasattr(provider, "sync_client")
+        assert hasattr(provider, "async_client")
+        assert hasattr(provider, "supported_models")
+
+        # Check if deployments are configured
+        deployments = os.getenv("AZURE_OPENAI_DEPLOYMENTS", "")
+        if deployments:
+            expected_models = [
+                f"azure/{d.strip()}" for d in deployments.split(",") if d.strip()
+            ]
+            assert provider.supported_models == expected_models
+
+        print("✅ AzureOpenAIProvider initialization test passed!")
+
+    except ValueError as e:
+        pytest.skip(f"Azure OpenAI environment variables not properly configured: {e}")
+    except Exception as e:
+        pytest.fail(f"AzureOpenAIProvider initialization failed: {e}")
+
+
+@pytest.mark.skipif(
+    not (os.getenv("AZURE_OPENAI_ENDPOINT") and os.getenv("AZURE_OPENAI_API_KEY")),
+    reason="Azure OpenAI credentials not found",
+)
+def test_azure_openai_simple():
+    """Simple Azure OpenAI test"""
+
+    # Use the deployment name from your example
+    deployment = "ai-parsing-gpt-5-chat"  # YOUR ACTUAL DEPLOYMENT NAME
+
+    response, cost = call_ai(
+        model=f"azure/{deployment}",
+        messages=[{"role": "user", "content": "What is the capital of France?"}],
+        temperature=0,
+        max_tokens=50,
+    )
+
+    assert isinstance(response, str)
+    assert len(response) > 0
+    print(f"Response: {response}")
