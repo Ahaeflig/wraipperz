@@ -1,7 +1,8 @@
-from typing import Type, get_origin, get_args, Union, Any, Dict
-from pydantic import BaseModel
-from datetime import date
 import enum
+from datetime import date
+from typing import Any, Dict, Type, Union, get_args, get_origin
+
+from pydantic import BaseModel
 
 
 def find_yaml(text):
@@ -52,6 +53,42 @@ def find_yaml(text):
     return yaml_content.strip()
 
 
+def build_comment_with_options(json_schema_extra: dict) -> str:
+    """
+    Build a comment string from json_schema_extra, including options if present.
+
+    Args:
+        json_schema_extra: Dictionary containing comment and optionally options
+
+    Returns:
+        Formatted comment string with options appended if they exist
+    """
+    if not json_schema_extra:
+        return ""
+
+    comment_parts = []
+
+    # Add main comment if present and valid
+    if "comment" in json_schema_extra:
+        comment = json_schema_extra["comment"]
+        # Only add comment if it's a non-None value
+        if comment is not None:
+            # Convert non-string comments to string
+            comment_parts.append(str(comment))
+
+    # Add options if present
+    if "options" in json_schema_extra:
+        options = json_schema_extra["options"]
+        if options and isinstance(options, (list, tuple)):
+            options_str = ", ".join(str(opt) for opt in options)
+            comment_parts.append(f"(options: {options_str})")
+
+    if comment_parts:
+        return f" # {' '.join(comment_parts)}"
+
+    return ""
+
+
 def pydantic_to_yaml_example(model_class: Type[BaseModel]) -> str:
     """
     Convert a Pydantic model class to a YAML representation with example values.
@@ -78,10 +115,8 @@ def pydantic_to_yaml_example(model_class: Type[BaseModel]) -> str:
     yaml_lines = []
 
     for field_name, model_field in model_class.model_fields.items():
-        # Extract comment if present in json_schema_extra
-        comment = ""
-        if model_field.json_schema_extra and "comment" in model_field.json_schema_extra:
-            comment = f" # {model_field.json_schema_extra['comment']}"
+        # Build comment with options if present
+        comment = build_comment_with_options(model_field.json_schema_extra)
 
         # Get example from field
         example = (
@@ -250,7 +285,7 @@ def format_dict_yaml(
     lines = []
 
     for key, value in data.items():
-        # Extract comment from model class if provided
+        # Build comment with options from model class if provided
         comment = ""
         if (
             model_class
@@ -258,8 +293,7 @@ def format_dict_yaml(
             and key in model_class.model_fields
         ):
             field = model_class.model_fields[key]
-            if field.json_schema_extra and "comment" in field.json_schema_extra:
-                comment = f" # {field.json_schema_extra['comment']}"
+            comment = build_comment_with_options(field.json_schema_extra)
 
         if isinstance(value, dict):
             lines.append(f"{indent_str}{key}:{comment}")

@@ -1,9 +1,11 @@
+import enum
+from datetime import date
+from typing import Dict, List, Optional
+
 import pytest
 import yaml
-from typing import Optional, List, Dict
 from pydantic import BaseModel, Field, field_validator
-from datetime import date
-import enum
+
 from wraipperz.parsing.yaml_utils import pydantic_to_yaml_example
 
 
@@ -67,6 +69,51 @@ class Actor(BaseModel):
 class EmptyExample(BaseModel):
     name: str  # no example provided
     tags: List[str]  # no example provided
+
+
+# Add this Ethnicity enum and test model for options feature
+class Ethnicity(enum.Enum):
+    JAPANESE = "japanese"
+    CHINESE = "chinese"
+    KOREAN = "korean"
+    AMERICAN = "american"
+    BRITISH = "british"
+    FRENCH = "french"
+
+
+class ActorWithOptions(BaseModel):
+    """Actor model with options in fields."""
+
+    name: str = Field(
+        json_schema_extra={"example": "John Doe", "comment": "Full name of the actor"}
+    )
+
+    ethnicity: Ethnicity = Field(
+        default=None,
+        json_schema_extra={
+            "example": "japanese",
+            "comment": "Required - Ethnicity of the actor",
+            "options": [e.value for e in Ethnicity],
+            "is_attribute": True,
+        },
+    )
+
+    gender: Optional[Gender] = Field(
+        default=None,
+        json_schema_extra={
+            "example": "male",
+            "comment": "Gender identity",
+            "options": ["male", "female", "other"],
+        },
+    )
+
+    role_type: str = Field(
+        json_schema_extra={
+            "example": "protagonist",
+            "comment": "Type of role",
+            "options": ["protagonist", "antagonist", "supporting", "cameo"],
+        }
+    )
 
 
 class ComplexNesting(BaseModel):
@@ -842,7 +889,7 @@ def test_none_values_and_optional_handling():
 
 def test_generic_types_bug():
     """Test handling of generic types and type variables."""
-    from typing import TypeVar, Generic
+    from typing import Generic, TypeVar
 
     T = TypeVar("T")
 
@@ -956,3 +1003,98 @@ def test_extremely_nested_dict_structure():
     assert isinstance(
         parsed_data["ultra_nested"]["level1"]["level2"]["level3"]["level4"], list
     )
+
+
+def test_comments_with_options_in_yaml():
+    """Test that options from json_schema_extra are included in the YAML comments."""
+    yaml_example = pydantic_to_yaml_example(ActorWithOptions)
+
+    # Check for comments with options in the generated YAML
+    assert "# Full name of the actor" in yaml_example  # No options
+    assert (
+        "# Required - Ethnicity of the actor (options: japanese, chinese, korean, american, british, french)"
+        in yaml_example
+    )
+    assert "# Gender identity (options: male, female, other)" in yaml_example
+    assert (
+        "# Type of role (options: protagonist, antagonist, supporting, cameo)"
+        in yaml_example
+    )
+
+    # Verify YAML is still valid
+    parsed_data = yaml.safe_load(yaml_example)
+    assert "name" in parsed_data
+    assert "ethnicity" in parsed_data
+    assert "gender" in parsed_data
+    assert "role_type" in parsed_data
+
+    # Verify example values are preserved
+    assert parsed_data["ethnicity"] == "japanese"
+    assert parsed_data["gender"] == "male"
+    assert parsed_data["role_type"] == "protagonist"
+
+
+def test_nested_model_with_options():
+    """Test that options work correctly in nested models."""
+
+    class NestedWithOptions(BaseModel):
+        status: str = Field(
+            json_schema_extra={
+                "example": "active",
+                "comment": "Current status",
+                "options": ["active", "inactive", "pending"],
+            }
+        )
+
+    class ParentWithOptions(BaseModel):
+        nested: NestedWithOptions = Field(
+            json_schema_extra={"comment": "Nested configuration"}
+        )
+        parent_field: str = Field(
+            json_schema_extra={
+                "example": "option1",
+                "comment": "Parent level field",
+                "options": ["option1", "option2", "option3"],
+            }
+        )
+
+    yaml_example = pydantic_to_yaml_example(ParentWithOptions)
+
+    # Check that options appear in both parent and nested fields
+    assert "# Current status (options: active, inactive, pending)" in yaml_example
+    assert "# Parent level field (options: option1, option2, option3)" in yaml_example
+
+    # Verify the YAML is valid
+    parsed_data = yaml.safe_load(yaml_example)
+    assert parsed_data["nested"]["status"] == "active"
+    assert parsed_data["parent_field"] == "option1"
+
+
+def test_empty_options_list():
+    """Test handling of empty options list."""
+
+    class EmptyOptionsModel(BaseModel):
+        field_with_empty_options: str = Field(
+            json_schema_extra={
+                "example": "value",
+                "comment": "Field with empty options",
+                "options": [],
+            }
+        )
+        field_without_options: str = Field(
+            json_schema_extra={
+                "example": "value",
+                "comment": "Field without options key",
+            }
+        )
+
+    yaml_example = pydantic_to_yaml_example(EmptyOptionsModel)
+
+    # Empty options should not be shown
+    assert "# Field with empty options" in yaml_example
+    assert (
+        "(options:" not in yaml_example.split("\n")[0]
+    )  # First field shouldn't have options
+
+    # Field without options key should work normally
+    assert "# Field without options key" in yaml_example
