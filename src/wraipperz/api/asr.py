@@ -1,10 +1,11 @@
 import abc
+import os
 from pathlib import Path
 from typing import Dict, List, Optional
-from openai import OpenAI
-import os
+
+from deepgram import DeepgramClient
 from dotenv import load_dotenv
-from deepgram import DeepgramClient, PrerecordedOptions
+from openai import OpenAI
 
 load_dotenv(override=True)
 
@@ -222,7 +223,8 @@ class DeepgramASRProvider(ASRProvider):
     """Deepgram ASR provider"""
 
     def __init__(self, api_key: str = None):
-        self.client = DeepgramClient(api_key or os.getenv("DG_API_KEY"))
+        # DeepgramClient now requires api_key as keyword-only argument
+        self.client = DeepgramClient(api_key=api_key or os.getenv("DG_API_KEY"))
 
     def transcribe(
         self, audio_path: str | Path, language: Optional[str] = None, **kwargs
@@ -239,30 +241,54 @@ class DeepgramASRProvider(ASRProvider):
             ASRResult object containing transcription and timing information
         """
         try:
-            # Configure options
-            options = PrerecordedOptions(
+            # Open and read audio file
+            with open(audio_path, "rb") as audio:
+                audio_buffer = audio.read()
+
+            # Get transcription with the new API
+            # Pass parameters directly to the transcribe_file method
+            response = self.client.listen.v1.media.transcribe_file(
+                request=audio_buffer,
                 model="nova-2",  # Using Nova-2 model for best accuracy
                 language=language or "en",
                 smart_format=True,
-            )
-
-            # Open and read audio file
-            with open(audio_path, "rb") as audio:
-                source = {"buffer": audio.read()}
-
-            # Get transcription
-            response = self.client.listen.prerecorded.v("1").transcribe_file(
-                source, options
+                **kwargs,  # Pass any additional parameters
             )
 
             # Extract words with timing information
             words = []
-            for word in response.results.channels[0].alternatives[0].words:
-                words.append({"word": word.word, "start": word.start, "end": word.end})
+            if hasattr(response, "results") and response.results:
+                if hasattr(response.results, "channels") and response.results.channels:
+                    channel = response.results.channels[0]
+                    if hasattr(channel, "alternatives") and channel.alternatives:
+                        alternative = channel.alternatives[0]
+                        if hasattr(alternative, "words") and alternative.words:
+                            for word in alternative.words:
+                                words.append(
+                                    {
+                                        "word": word.word,
+                                        "start": word.start,
+                                        "end": word.end,
+                                    }
+                                )
+                        # Get full text
+                        text = (
+                            alternative.transcript
+                            if hasattr(alternative, "transcript")
+                            else ""
+                        )
+                    else:
+                        text = ""
+                else:
+                    text = ""
+            else:
+                text = ""
 
-            # Get full text and duration
-            text = response.results.channels[0].alternatives[0].transcript
-            duration = response.metadata.duration
+            # Get duration from metadata if available
+            duration = 0.0
+            if hasattr(response, "metadata") and response.metadata:
+                if hasattr(response.metadata, "duration"):
+                    duration = response.metadata.duration
 
             return ASRResult(
                 text=text, words=words, duration=duration, language=language or "en"

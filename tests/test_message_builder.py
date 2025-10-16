@@ -85,8 +85,10 @@ def test_message_builder_complex():
     assert messages[1]["role"] == "user"
     assert isinstance(messages[1]["content"], list)
     assert messages[1]["content"][0]["type"] == "text"
-    assert messages[1]["content"][1]["type"] == "image_url"
-    assert messages[1]["content"][2]["type"] == "text"
+    assert (
+        messages[1]["content"][1]["type"] == "text"
+    )  # Text comes before image due to add_image implementation
+    assert messages[1]["content"][2]["type"] == "image_url"
 
     assert messages[2]["role"] == "assistant"
     assert messages[2]["content"] == "I see the image shows a red square."

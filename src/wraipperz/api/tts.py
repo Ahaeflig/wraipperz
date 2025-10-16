@@ -1,33 +1,33 @@
-from typing import Optional, Union
-import asyncio
-import shutil
-import numpy as np
-import websockets
-import json
-import base64
-import os
 import abc
-import requests
+import asyncio
+import base64
+import json
 import mimetypes
+import os
+import shutil
 import struct
-from openai import OpenAI
-from dotenv import load_dotenv
-from pathlib import Path
-from tenacity import (
-    retry,
-    stop_after_attempt,
-    wait_exponential,
-    retry_if_exception_type,
-)
-import requests.exceptions
-import websockets.exceptions
-from websockets.exceptions import WebSocketException
 import subprocess
+from pathlib import Path
+from typing import Optional, Union
+
+import numpy as np
 import requests
+import requests.exceptions
 import soundfile as sf
+import websockets
+import websockets.exceptions
 from cartesia import Cartesia
+from dotenv import load_dotenv
 from google import genai
 from google.genai import types as genai_types
+from openai import OpenAI
+from tenacity import (
+    retry,
+    retry_if_exception_type,
+    stop_after_attempt,
+    wait_exponential,
+)
+from websockets.exceptions import WebSocketException
 
 from .asr import create_asr_manager
 
@@ -194,7 +194,7 @@ class MiniMaxiTTSProvider(TTSProvider):
                 "voice_id": voice,
                 "speed": speed,
                 "vol": volume,
-                "pitch": pitch,
+                "pitch": int(pitch),  # MiniMaxi API expects pitch as integer
             },
             "audio_setting": {
                 "sample_rate": kwargs.get("sample_rate", 32000),
@@ -570,6 +570,7 @@ class OpenAIRealtimeTTSProvider(TTSProvider):
 
 class OpenAITTSProvider(TTSProvider):
     def __init__(self, api_key: str = None):
+        # OpenAI SDK now requires api_key as keyword-only argument
         self.client = OpenAI(api_key=api_key or os.getenv("OPENAI_API_KEY"))
         self.available_voices = {
             "alloy": {

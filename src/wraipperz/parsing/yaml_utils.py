@@ -125,6 +125,9 @@ def pydantic_to_yaml_example(model_class: Type[BaseModel]) -> str:
             else None
         )
 
+        # Process the example to handle Pydantic models and enums
+        example = process_example_value(example)
+
         # If no example is provided, generate a default one based on the type
         if example is None:
             example = generate_default_example(model_field.annotation)
@@ -237,7 +240,7 @@ def format_list_yaml(items: list, indent: int = 0, list_item_type: Any = None) -
         ):
             # Handle Pydantic model instances (fallback case)
             if hasattr(item, "model_dump"):
-                obj_dict = item.model_dump()
+                obj_dict = item.model_dump(mode="json")
             else:
                 obj_dict = item.__dict__
 
@@ -481,3 +484,45 @@ def generate_default_example(type_annotation):
 
     # Default fallback
     return None
+
+
+def process_example_value(value: Any) -> Any:
+    """
+    Process an example value to handle Pydantic models, enums, and other special types.
+
+    Args:
+        value: The raw example value to process
+
+    Returns:
+        Processed value suitable for YAML serialization
+    """
+    if value is None:
+        return None
+
+    # Handle Pydantic model instances
+    if isinstance(value, BaseModel):
+        # Convert to dict with mode='json' to properly serialize enums
+        return value.model_dump(mode="json")
+
+    # Handle enum instances
+    if isinstance(value, enum.Enum):
+        return value.value
+
+    # Handle lists
+    if isinstance(value, list):
+        return [process_example_value(item) for item in value]
+
+    # Handle dictionaries
+    if isinstance(value, dict):
+        return {k: process_example_value(v) for k, v in value.items()}
+
+    # Handle tuples
+    if isinstance(value, tuple):
+        return tuple(process_example_value(item) for item in value)
+
+    # Handle sets
+    if isinstance(value, set):
+        return {process_example_value(item) for item in value}
+
+    # Return other values as-is
+    return value

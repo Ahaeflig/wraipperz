@@ -62,7 +62,7 @@ def test_generate():
         messages=TEXT_TO_IMAGE_MESSAGES,
         temperature=0.7,
         max_tokens=4096,
-        model="gemini/gemini-2.0-flash-exp-image-generation",
+        model="gemini/gemini-2.5-flash-image",
     )
 
     # Check structure of response
@@ -95,7 +95,7 @@ def test_generate_with_input_image():
         messages=IMAGE_TO_IMAGE_MESSAGES,
         temperature=0.7,
         max_tokens=4096,
-        model="gemini/gemini-2.0-flash-exp-image-generation",
+        model="gemini/gemini-2.5-flash-image",
     )
 
     assert isinstance(result, dict)

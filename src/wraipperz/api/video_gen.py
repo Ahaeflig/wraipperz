@@ -101,7 +101,7 @@ class VideoGenProvider(abc.ABC):
         if img_size <= max_size_bytes:
             provider_prefix = f"{provider_name} " if provider_name else ""
             print(
-                f"{provider_prefix}Image already within size limit ({img_size/1024:.1f} KB)"
+                f"{provider_prefix}Image already within size limit ({img_size / 1024:.1f} KB)"
             )
             return img, img_size
 
@@ -116,7 +116,7 @@ class VideoGenProvider(abc.ABC):
                 if img_size <= max_size_bytes:
                     provider_prefix = f"{provider_name} " if provider_name else ""
                     print(
-                        f"{provider_prefix}Image compressed to {img_size/1024:.1f} KB with quality {quality}%"
+                        f"{provider_prefix}Image compressed to {img_size / 1024:.1f} KB with quality {quality}%"
                     )
                     return img, img_size
 
@@ -131,7 +131,7 @@ class VideoGenProvider(abc.ABC):
                 if img_size <= max_size_bytes:
                     provider_prefix = f"{provider_name} " if provider_name else ""
                     print(
-                        f"{provider_prefix}Image compressed to {img_size/1024:.1f} KB with quality {quality}%"
+                        f"{provider_prefix}Image compressed to {img_size / 1024:.1f} KB with quality {quality}%"
                     )
                     return img, img_size
 
@@ -158,7 +158,7 @@ class VideoGenProvider(abc.ABC):
 
             provider_prefix = f"{provider_name} " if provider_name else ""
             print(
-                f"{provider_prefix}Resized image to {new_width}x{new_height} ({img_size/1024:.1f} KB)"
+                f"{provider_prefix}Resized image to {new_width}x{new_height} ({img_size / 1024:.1f} KB)"
             )
 
             if img_size <= max_size_bytes:
@@ -173,7 +173,7 @@ class VideoGenProvider(abc.ABC):
 
         provider_prefix = f"{provider_name} " if provider_name else ""
         print(
-            f"{provider_prefix}Warning: Could not reduce image below target size. Final size: {img_size/1024:.1f} KB"
+            f"{provider_prefix}Warning: Could not reduce image below target size. Final size: {img_size / 1024:.1f} KB"
         )
 
         return img, img_size

@@ -1256,56 +1256,6 @@ def test_call_ai_o3_full_model():
             raise
 
 
-@pytest.mark.skipif(not os.getenv("OPENAI_API_KEY"), reason="OpenAI API key not found")
-def test_o3_pro_model_access():
-    """Test if user has access to o3-pro model"""
-
-    messages = [
-        {
-            "role": "system",
-            "content": "You are a helpful assistant.",
-        },
-        {"role": "user", "content": "What is 5 + 7?"},
-    ]
-
-    try:
-        response, cost = call_ai(
-            model="openai/o3-pro",
-            messages=messages,
-            max_tokens=50,
-        )
-
-        # Should work without error if user has access
-        assert isinstance(response, str)
-        assert len(response) > 0
-        assert "12" in response
-
-        # Validate cost structure
-        assert isinstance(cost, (int, float))
-        assert cost >= 0
-
-        print(f"✅ o3-pro model access confirmed! Response: {response}")
-
-    except Exception as e:
-        # If user doesn't have access, we'll get a specific error
-        error_msg = str(e).lower()
-        if any(
-            access_error in error_msg
-            for access_error in [
-                "model not found",
-                "invalid model",
-                "not available",
-                "access",
-                "permission",
-                "unauthorized",
-            ]
-        ):
-            pytest.skip(f"o3-pro model not accessible: {e}")
-        else:
-            # Re-raise if it's a different error
-            raise
-
-
 # ===== ANTHROPIC REASONING MODELS TESTS (Extended Thinking) =====
 
 

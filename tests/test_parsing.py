@@ -1098,3 +1098,134 @@ def test_empty_options_list():
 
     # Field without options key should work normally
     assert "# Field without options key" in yaml_example
+
+
+def test_enum_value_serialization_in_nested_models():
+    """Test that enum values (not representations) are properly serialized in nested Pydantic models.
+
+    This test verifies the fix for a critical bug where enum instances in nested Pydantic models
+    were being serialized as their string representation (e.g., "AvailabilityStatus.AVAILABLE")
+    instead of their actual value (e.g., "available").
+    """
+    from datetime import date
+    from enum import Enum
+    from typing import List, Optional
+
+    class AvailabilityStatus(str, Enum):
+        AVAILABLE = "available"
+        SECOND_KEEP = "secondKeep"
+        UNAVAILABLE = "unavailable"
+        UNKNOWN = "unknown"
+
+    class Availability(BaseModel):
+        start_date: date = Field(
+            json_schema_extra={
+                "example": "2025-08-15",
+                "comment": "Start date of availability period",
+            }
+        )
+        end_date: date = Field(
+            json_schema_extra={
+                "example": "2025-08-20",
+                "comment": "End date of availability period",
+            }
+        )
+        availability: Optional[AvailabilityStatus] = Field(
+            default=None,
+            json_schema_extra={
+                "example": AvailabilityStatus.AVAILABLE.value,  # Using .value here
+                "options": [
+                    e.value for e in AvailabilityStatus
+                ],  # Providing options list
+            },
+        )
+
+    class Actor(BaseModel):
+        name: str = Field(json_schema_extra={"example": "John Doe"})
+
+        # Using nested Availability objects in the example
+        availability: List[Availability] = Field(
+            default=[],
+            json_schema_extra={
+                "example": [
+                    Availability(
+                        start_date=date(2025, 8, 15),
+                        end_date=date(2025, 8, 20),
+                        availability=AvailabilityStatus.AVAILABLE,  # Passing enum directly
+                    )
+                ],
+                "comment": "Availability of the actor typically found in the email body",
+            },
+        )
+
+    class Actors(BaseModel):
+        actors: List[Actor] = Field(
+            default_factory=list, json_schema_extra={"comment": "List of actors"}
+        )
+
+    # Generate the template
+    yaml_example = pydantic_to_yaml_example(Actors)
+    print(f"\nGenerated YAML for enum test:\n{yaml_example}")
+
+    # Parse the YAML to verify it's valid
+    parsed_data = yaml.safe_load(yaml_example)
+
+    # Critical assertion: The enum value should be "available", NOT "AvailabilityStatus.AVAILABLE"
+    assert "actors" in parsed_data
+    assert len(parsed_data["actors"]) > 0
+
+    # Check first actor's availability
+    first_actor = parsed_data["actors"][0]
+    assert "availability" in first_actor
+    assert len(first_actor["availability"]) > 0
+
+    # Check the enum value in the nested model
+    first_availability = first_actor["availability"][0]
+    assert "availability" in first_availability
+
+    # This is the critical assertion - enum should be serialized as its value
+    assert (
+        first_availability["availability"] == "available"
+    ), f"Expected enum value 'available' but got '{first_availability['availability']}'"
+
+    # Also verify in the raw YAML string that we don't have the enum representation
+    assert (
+        '"AvailabilityStatus.AVAILABLE"' not in yaml_example
+    ), "Enum representation found in YAML output instead of enum value"
+    assert (
+        '"available"' in yaml_example
+    ), "Expected enum value 'available' not found in YAML output"
+
+    # Test with int enum as well
+    class Priority(int, Enum):
+        LOW = 1
+        MEDIUM = 2
+        HIGH = 3
+
+    class TaskModel(BaseModel):
+        priority: Priority = Field(json_schema_extra={"example": Priority.HIGH})
+
+    class TaskList(BaseModel):
+        tasks: List[TaskModel] = Field(
+            json_schema_extra={
+                "example": [TaskModel(priority=Priority.HIGH)],
+                "comment": "List of tasks",
+            }
+        )
+
+    yaml_example_int = pydantic_to_yaml_example(TaskList)
+    print(f"\nGenerated YAML for int enum test:\n{yaml_example_int}")
+
+    parsed_int = yaml.safe_load(yaml_example_int)
+
+    # Verify int enum is serialized as value (3) not representation ("Priority.HIGH")
+    assert (
+        parsed_int["tasks"][0]["priority"] == 3
+    ), f"Expected enum value 3 but got '{parsed_int['tasks'][0]['priority']}'"
+
+    # Verify no enum representation in output
+    assert (
+        "Priority.HIGH" not in yaml_example_int
+    ), "Int enum representation found in YAML output instead of enum value"
+
+    print("✅ Enum value serialization test passed!")
