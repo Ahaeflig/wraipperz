@@ -1568,3 +1568,151 @@ def test_azure_openai_simple():
     assert isinstance(response, str)
     assert len(response) > 0
     print(f"Response: {response}")
+
+
+@pytest.mark.skipif(not os.getenv("GOOGLE_API_KEY"), reason="Google API key not found")
+def test_call_ai_gemini_25_pro():
+    """Integration test: Test call_ai wrapper with Gemini 2.5 Pro"""
+
+    # Test with the stable Gemini 2.5 Pro model
+    response, cost = call_ai(
+        model="gemini/gemini-2.5-pro",
+        messages=TEXT_MESSAGES,
+        temperature=0,
+        max_tokens=1500,
+    )
+
+    # Validate response
+    assert isinstance(response, str)
+    assert len(response) > 0
+    assert (
+        "TEST_RESPONSE_123" in response
+    ), f"Expected 'TEST_RESPONSE_123', got: {response}"
+
+    # Validate cost structure
+    assert isinstance(cost, (int, float))
+    assert cost >= 0
+
+    print(f"✅ Gemini 2.5 Pro access confirmed! Response: {response[:100]}...")
+
+
+@pytest.mark.skipif(not os.getenv("GOOGLE_API_KEY"), reason="Google API key not found")
+def test_call_ai_gemini_25_flash():
+    """Integration test: Test call_ai wrapper with Gemini 2.5 Flash"""
+
+    # Test with the stable Gemini 2.5 Flash model
+    response, cost = call_ai(
+        model="gemini/gemini-2.5-flash",
+        messages=TEXT_MESSAGES,
+        temperature=0,
+        max_tokens=150,
+    )
+
+    # Validate response
+    assert isinstance(response, str)
+    assert len(response) > 0
+    assert (
+        "TEST_RESPONSE_123" in response
+    ), f"Expected 'TEST_RESPONSE_123', got: {response}"
+
+    # Validate cost structure
+    assert isinstance(cost, (int, float))
+    assert cost >= 0
+
+    print(f"✅ Gemini 2.5 Flash access confirmed! Response: {response[:100]}...")
+
+
+@pytest.mark.skipif(not os.getenv("GOOGLE_API_KEY"), reason="Google API key not found")
+def test_call_ai_gemini_25_with_image():
+    """Integration test: Test Gemini 2.5 models with image analysis"""
+
+    # Create messages with image using MessageBuilder
+    messages = (
+        MessageBuilder()
+        .add_system("You are a helpful assistant. Identify the color in the image.")
+        .add_user("What color is the square in this image?")
+        .add_image(str(TEST_IMAGE_PATH))
+        .build()
+    )
+
+    # Test with Gemini 2.5 Pro
+    response, cost = call_ai(
+        model="gemini/gemini-2.5-pro",
+        messages=messages,
+        temperature=0,
+        max_tokens=1500,
+    )
+
+    # Validate response
+    assert isinstance(response, str)
+    assert len(response) > 0
+    assert (
+        "red" in response.lower()
+    ), f"Expected response to contain 'red', got: {response}"
+
+    # Validate cost structure
+    assert isinstance(cost, (int, float))
+    assert cost >= 0
+
+    print(f"✅ Gemini 2.5 Pro image analysis confirmed! Response: {response[:100]}...")
+
+
+@pytest.mark.parametrize(
+    "model_id,model_name",
+    [
+        ("gemini/gemini-2.5-pro", "Gemini 2.5 Pro"),
+        ("gemini/gemini-2.5-flash", "Gemini 2.5 Flash"),
+        ("genai/gemini-2.5-pro", "Gemini 2.5 Pro (genai prefix)"),
+        ("genai/gemini-2.5-flash", "Gemini 2.5 Flash (genai prefix)"),
+    ],
+)
+@pytest.mark.skipif(not os.getenv("GOOGLE_API_KEY"), reason="Google API key not found")
+def test_call_ai_gemini_25_models_parametrized(model_id, model_name):
+    """Parametrized test for Gemini 2.5 models with different prefixes"""
+
+    messages = (
+        MessageBuilder()
+        .add_system(
+            "You are a helpful assistant. You must respond with exactly: 'GEMINI_25_TEST'"
+        )
+        .add_user("Please provide the required test response.")
+        .build()
+    )
+
+    try:
+        # Test the call_ai wrapper function
+        response, cost = call_ai(
+            model=model_id,
+            messages=messages,
+            temperature=0,
+            max_tokens=150,
+        )
+
+        # Validate response
+        assert isinstance(response, str)
+        assert len(response) > 0
+        assert (
+            "GEMINI_25_TEST" in response
+        ), f"Expected 'GEMINI_25_TEST', got: {response}"
+
+        # Validate cost structure
+        assert isinstance(cost, (int, float))
+        assert cost >= 0
+
+        print(f"✅ {model_name} access confirmed!")
+
+    except Exception as e:
+        error_msg = str(e).lower()
+        if any(
+            access_error in error_msg
+            for access_error in [
+                "model not found",
+                "invalid model",
+                "not available",
+                "access",
+                "permission",
+            ]
+        ):
+            pytest.skip(f"{model_name} not accessible: {e}")
+        else:
+            raise

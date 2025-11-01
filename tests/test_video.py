@@ -1,13 +1,13 @@
+import json
 import os
 import tempfile
-import json
 from pathlib import Path
 from typing import List
 
 import pytest
 from pydantic import BaseModel, Field
 
-from wraipperz.api.llm import call_ai, GeminiProvider
+from wraipperz.api.llm import GeminiProvider, call_ai
 from wraipperz.api.messages import MessageBuilder
 
 
@@ -196,7 +196,7 @@ def test_gemini_video_analysis_with_thinking_budget():
     try:
         # Test with Gemini Pro model and thinking budget
         response, cost = call_ai(
-            model="genai/models/gemini-2.5-pro-preview-06-05",
+            model="gemini/gemini-2.5-pro",
             messages=messages,
             temperature=0.3,
             max_tokens=2000,

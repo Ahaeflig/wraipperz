@@ -1469,10 +1469,13 @@ class GeminiProvider(AIProvider):
         "genai/models/gemma-3-4b-it",
         "genai/models/gemma-3n-e4b-it",
         "genai/models/learnlm-2.0-flash-experimental",
+        "gemini/gemini-2.5-pro",
+        "gemini/gemini-2.5-flash",
+        "genai/gemini-2.5-pro",
+        "genai/gemini-2.5-flash",
     ]
 
     def __init__(self, api_key=None):
-        # genai.configure(api_key=api_key or os.getenv("GOOGLE_API_KEY"))
         self.client = genai.Client(api_key=api_key or os.getenv("GOOGLE_API_KEY"))
         try:
             # Get models from API
@@ -1482,17 +1485,28 @@ class GeminiProvider(AIProvider):
                     hasattr(m, "supported_actions")
                     and "generateContent" in m.supported_actions
                 ):
+                    # Handle both old and new naming conventions
+                    model_name = m.name
+
+                    # Remove "models/" prefix if present
+                    if model_name.startswith("models/"):
+                        model_name = model_name[7:]  # Remove "models/" prefix
+
                     # Create both gemini/ and genai/ prefixed versions
-                    genai_name = f"genai/{m.name}"
-                    gemini_name = f"gemini/{m.name}"
-                    api_models.append(genai_name)
-                    api_models.append(gemini_name)
+                    genai_name = f"genai/{model_name}"
+                    gemini_name = f"gemini/{model_name}"
+
+                    # Only add if not already in the list
+                    if genai_name not in self.supported_models:
+                        api_models.append(genai_name)
+                    if gemini_name not in self.supported_models:
+                        api_models.append(gemini_name)
 
             # Add the API models to our supported models
             if api_models:
                 self.supported_models.extend(api_models)
         except Exception as e:
-            print(e, f"Error initializing GeminiProvider: {e}")
+            print(f"Error initializing GeminiProvider: {e}")
 
     def call_ai(
         self,
@@ -1503,6 +1517,17 @@ class GeminiProvider(AIProvider):
         **kwargs,
     ):
         try:
+            # Handle different model name formats
+            if "/" in model:
+                model_parts = model.split("/")
+                if model_parts[0] in ["gemini", "genai", "models"]:
+                    # Extract just the model name without prefixes
+                    model_name = model_parts[-1]
+                else:
+                    model_name = model
+            else:
+                model_name = model
+
             # Extract system message if present
             system_instruction = next(
                 (msg["content"] for msg in messages if msg["role"] == "system"), None
@@ -1568,7 +1593,7 @@ class GeminiProvider(AIProvider):
                 )
 
             response = self.client.models.generate_content(
-                model=model.split("/")[-1],
+                model=model_name,
                 contents=contents,
                 config=types.GenerateContentConfig(
                     temperature=temperature,
@@ -1606,6 +1631,16 @@ class GeminiProvider(AIProvider):
         **kwargs,
     ):
         try:
+            if "/" in model:
+                model_parts = model.split("/")
+                if model_parts[0] in ["gemini", "genai", "models"]:
+                    # Extract just the model name without prefixes
+                    model_name = model_parts[-1]
+                else:
+                    model_name = model
+            else:
+                model_name = model
+
             # Extract system message if present
             system_instruction = next(
                 (msg["content"] for msg in messages if msg["role"] == "system"), None
@@ -1670,7 +1705,7 @@ class GeminiProvider(AIProvider):
                 )
 
             response = self.client.models.generate_content(
-                model=model.split("/")[-1],
+                model=model_name,
                 contents=contents,
                 config=types.GenerateContentConfig(
                     temperature=temperature,
