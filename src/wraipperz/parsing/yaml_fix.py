@@ -41,8 +41,6 @@ def yaml_extract_validate_repair(
     """
     # Step 1: Extract YAML content
     yaml_content = find_yaml(text)
-    if not yaml_content:
-        raise ValueError("No YAML content found in the provided text")
 
     # Keep track of the current YAML content for healing
     current_yaml = yaml_content
@@ -50,6 +48,11 @@ def yaml_extract_validate_repair(
 
     for attempt in range(max_retries + 1):
         try:
+            if not current_yaml:
+                raise ValueError(
+                    "No YAML content found in the provided text, probably wrong YAML block usage/format"
+                )
+
             # Step 2: Parse YAML
             yaml_data = yaml.safe_load(current_yaml)
 
@@ -67,6 +70,11 @@ def yaml_extract_validate_repair(
             error_type = "Pydantic validation error"
             error_message = e.json(indent=2)
 
+        except ValueError as e:
+            last_error = e
+            error_type = "ValueError"
+            error_message = str(e)
+
         except Exception as e:
             last_error = e
             error_type = "Unexpected error"
@@ -81,6 +89,36 @@ def yaml_extract_validate_repair(
 
         # Use AI to heal the YAML
         print(f"Attempt {attempt + 1}/{max_retries}: Using AI to heal YAML...")
+
+        YAML_FIXING_GUIDE = """
+1. **Quote these ALWAYS:**
+   - Strings containing `: ` (colon-space)
+   - Strings containing quotes (`"` or `'`)
+   - Strings starting with: `{}[]>|*&!%#@,?:-`
+   - Boolean-like values when meant as strings: `yes`, `no`, `true`, `false`, `True`, `False`
+
+2. **List items need special attention:**
+   - `- "text with: colon"` ✓
+   - `- 'text with "quotes"'` ✓
+   - `- text with: colon` ✗ WILL FAIL
+
+3. **Quoting methods (use appropriately):**
+   - Single quotes: `'literal text, "quotes" are fine'` (no escaping)
+   - Double quotes: `"text with \\n escapes"` (allows escape sequences)
+   - Block scalar for complex strings:
+     ```yaml
+     key: |
+       Multi-line text with "quotes" and: colons
+       Preserves formatting exactly
+     ```
+
+4. **Common fixes:**
+   - `somebody said: hello` → `"somebody said: hello"`
+   - `"hello" world` → `'"hello" world'` or `"\"hello\" world"`
+   - `- Scene with "quotes"` → `- 'Scene with "quotes"'`
+
+**Remember:** Unquoted special characters are interpreted as YAML syntax, not string content!
+"""
 
         # Create the healing prompt
         healing_prompt = f"""You are a YAML healing expert. The following YAML has an error and needs to be fixed.
@@ -98,6 +136,10 @@ def yaml_extract_validate_repair(
 ```yaml
 {current_yaml}
 ```
+
+Guidelines:
+- Make sure to follow correct YAML template and usage:
+{YAML_FIXING_GUIDE}
 
 Please fix the YAML to match the expected schema. Return the corrected YAML in a ```yaml code block.
 """
