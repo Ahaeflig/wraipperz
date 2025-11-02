@@ -3,13 +3,18 @@ from .api.llm import call_ai, call_ai_async, generate, generate_async
 from .api.messages import Message, MessageBuilder
 from .api.tts import create_tts_manager
 from .api.video_gen import (
-    generate_video_from_text,
+    download_video,
     generate_video_from_image,
+    generate_video_from_text,
     get_video_status,
     wait_for_video_completion,
-    download_video,
 )
-from .parsing import find_yaml, pydantic_to_yaml_example, pydantic_to_yaml
+from .parsing import (
+    find_yaml,
+    pydantic_to_yaml,
+    pydantic_to_yaml_example,
+    yaml_extract_validate_repair,
+)
 
 __all__ = [
     "call_ai",
@@ -28,4 +33,5 @@ __all__ = [
     "get_video_status",
     "wait_for_video_completion",
     "download_video",
+    "yaml_extract_validate_repair",
 ]
