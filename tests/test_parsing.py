@@ -1229,3 +1229,39 @@ def test_enum_value_serialization_in_nested_models():
     ), "Int enum representation found in YAML output instead of enum value"
 
     print("✅ Enum value serialization test passed!")
+
+
+def test_find_yaml_fallback_without_markers():
+    """Test that find_yaml returns content as-is (stripped) when markers are missing."""
+    from wraipperz.parsing.yaml_utils import find_yaml
+
+    # Test case where the user provided raw YAML without markdown code blocks
+    raw_content = """
+name: John Doe
+age: 30
+role: admin
+""".strip()
+
+    # Should return the content as-is instead of empty string
+    result = find_yaml(raw_content)
+    assert result == raw_content
+
+    # Verify standard behavior with markers still works
+    content_with_markers = """
+Here is the config:
+```yaml
+name: John Doe
+age: 30
+role: admin
+```
+"""
+    result_markers = find_yaml(content_with_markers)
+
+    # Verify extraction
+    expected_yaml = """name: John Doe
+age: 30
+role: admin"""
+    assert result_markers == expected_yaml
+
+    parsed_markers = yaml.safe_load(result_markers)
+    assert parsed_markers == {"name": "John Doe", "age": 30, "role": "admin"}

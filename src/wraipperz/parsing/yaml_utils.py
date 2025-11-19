@@ -21,7 +21,7 @@ def find_yaml(text):
 
     # If we didn't find the start, return the original text
     if start_index == -1:
-        return ""
+        return text.strip()
 
     end_start_index = len(lines)
     # Check if there is another yaml block starting ```yaml
