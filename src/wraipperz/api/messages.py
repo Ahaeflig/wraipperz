@@ -63,6 +63,18 @@ class Message:
         )
         return self
 
+    def add_pdf(self, pdf_path: Union[str, Path]) -> Message:
+        """Add a PDF content item to the message.
+
+        Args:
+            pdf_path: Path to the PDF file or URL
+
+        Returns:
+            self for method chaining
+        """
+        self.content.append({"type": "input_url", "input_url": {"url": str(pdf_path)}})
+        return self
+
     def to_dict(self) -> Dict:
         """Convert the message to a dictionary format expected by AI providers.
 
@@ -152,6 +164,25 @@ class MessageBuilder:
         if text:
             self.messages[-1].add_text(text)
         self.messages[-1].add_video(video_path)
+        return self
+
+    def add_pdf(
+        self, pdf_path: Union[str, Path], text: Optional[str] = None
+    ) -> MessageBuilder:
+        """Add a PDF with optional text to the current or new user message.
+
+        Args:
+            pdf_path: Path to the PDF file or URL
+            text: Optional text to accompany the PDF
+
+        Returns:
+            self for method chaining
+        """
+        if not self.messages or self.messages[-1].role != "user":
+            self.add_user()
+        if text:
+            self.messages[-1].add_text(text)
+        self.messages[-1].add_pdf(pdf_path)
         return self
 
     def build(self) -> List[Dict]:

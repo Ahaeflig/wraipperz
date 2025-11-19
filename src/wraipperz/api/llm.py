@@ -122,6 +122,10 @@ class LMStudioProvider(AIProvider):
 
 class OpenAIProvider(AIProvider):
     supported_models = [
+        "openai/gpt-5.1-instant",
+        "openai/gpt-5.1-2025-11-13",
+        "openai/gpt-5.1-thinking",
+        "openai/gpt-5.1",
         "openai/o1-mini-2024-09-12",
         "openai/o1-mini",
         "openai/gpt-4",
@@ -283,6 +287,8 @@ class OpenAIProvider(AIProvider):
             "o3-mini",
             "o3-pro",
             "o4-mini",
+            "gpt-5.1-thinking",
+            "gpt-5",
         ]
         return any(model_name.startswith(rm) for rm in reasoning_models)
 
@@ -297,7 +303,7 @@ class OpenAIProvider(AIProvider):
         for message in messages:
             if message["role"] == "system":
                 # Convert system to developer for newer models, or to user for older ones
-                if model_name in ["o1-mini", "o1-preview"]:
+                if model_name in ["o1-mini", "o1-preview", "gpt-5"]:
                     # These models don't support system or developer messages
                     prepared_messages.append(
                         {"role": "user", "content": message["content"]}
@@ -425,6 +431,26 @@ class OpenAIProvider(AIProvider):
                                 },
                             }
                         )
+                    elif isinstance(item, dict) and item.get("type") == "input_url":
+                        # Handle PDF files
+                        pdf_url = item["input_url"]["url"]
+                        if pdf_url.startswith("data:"):
+                            # Already base64 encoded
+                            prepared_content.append(item)
+                        elif pdf_url.startswith(("http://", "https://")):
+                            # URL - OpenAI can handle these directly
+                            prepared_content.append(item)
+                        else:
+                            # Local file - need to encode
+                            pdf_data = self._process_media(pdf_url)
+                            prepared_content.append(
+                                {
+                                    "type": "input_url",
+                                    "input_url": {
+                                        "url": f"data:application/pdf;base64,{pdf_data}"
+                                    },
+                                }
+                            )
                     elif isinstance(item, dict) and item.get("type") in [
                         "video_url",
                         "audio_url",
@@ -566,6 +592,29 @@ class AzureOpenAIProvider(AIProvider):
                                     "type": "image_url",
                                     "image_url": {
                                         "url": f"data:{mime_type};base64,{image_data}"
+                                    },
+                                }
+                            )
+                    elif isinstance(item, dict) and item.get("type") == "input_url":
+                        # Handle PDF files for Azure OpenAI
+                        pdf_url = item["input_url"]["url"]
+                        if pdf_url.startswith("data:"):
+                            # Already base64 encoded
+                            prepared_content.append(item)
+                        elif pdf_url.startswith(("http://", "https://")):
+                            # URL - Azure can handle these directly
+                            prepared_content.append(item)
+                        else:
+                            # Local file - need to encode
+                            with open(pdf_url, "rb") as pdf_file:
+                                pdf_data = base64.b64encode(pdf_file.read()).decode(
+                                    "utf-8"
+                                )
+                            prepared_content.append(
+                                {
+                                    "type": "input_url",
+                                    "input_url": {
+                                        "url": f"data:application/pdf;base64,{pdf_data}"
                                     },
                                 }
                             )
@@ -1473,6 +1522,14 @@ class GeminiProvider(AIProvider):
         "gemini/gemini-2.5-flash",
         "genai/gemini-2.5-pro",
         "genai/gemini-2.5-flash",
+        "gemini/gemini-3-pro-preview",
+        "genai/gemini-3-pro-preview",
+        "gemini/gemini-3.0-pro",
+        "gemini/gemini-3.0-pro-001",
+        "gemini/gemini-3.0-deep-think",
+        "genai/gemini-3.0-pro",
+        "genai/gemini-3.0-pro-001",
+        "genai/gemini-3.0-deep-think",
     ]
 
     def __init__(self, api_key=None):

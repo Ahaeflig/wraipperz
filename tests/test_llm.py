@@ -28,6 +28,9 @@ TEST_IMAGE_PATH = TEST_ASSETS_DIR / "test_image.jpg"
 # Path to test video
 TEST_VIDEO_PATH = TEST_ASSETS_DIR / "test_video.mp4"
 
+# Path to test PDF
+TEST_PDF_PATH = TEST_ASSETS_DIR / "test_actor.pdf"
+
 # Update image messages format to match the providers' expected structure
 IMAGE_MESSAGES = [
     {
@@ -53,6 +56,20 @@ VIDEO_MESSAGES = [
     }
 ]
 
+# PDF messages for testing
+PDF_MESSAGES = [
+    {
+        "role": "user",
+        "content": [
+            {
+                "type": "text",
+                "text": "What is the name of the actor mentioned in this PDF? Respond with just the actor's name.",
+            },
+            {"type": "input_url", "input_url": {"url": str(TEST_PDF_PATH)}},
+        ],
+    }
+]
+
 
 # Pydantic models for structured output testing
 class SimpleVideoAnalysis(BaseModel):
@@ -73,7 +90,7 @@ class SimpleVideoAnalysis(BaseModel):
 
 @pytest.fixture(autouse=True)
 def setup_test_assets():
-    """Create test image and video if they don't exist"""
+    """Create test image, video, and PDF if they don't exist"""
     # Create test image
     if not TEST_IMAGE_PATH.exists():
         from PIL import Image
@@ -104,6 +121,28 @@ def setup_test_assets():
             # This won't be a real video but will exist for path testing
             TEST_VIDEO_PATH.write_text("placeholder video file for testing")
 
+    # Create test PDF with actor information
+    if not TEST_PDF_PATH.exists():
+        try:
+            from reportlab.lib.pagesizes import letter
+            from reportlab.pdfgen import canvas
+
+            c = canvas.Canvas(str(TEST_PDF_PATH), pagesize=letter)
+            c.setFont("Helvetica-Bold", 20)
+            c.drawString(100, 750, "Actor Information")
+            c.setFont("Helvetica", 14)
+            c.drawString(100, 700, "Name: Tom Hanks")
+            c.drawString(100, 680, "Profession: Actor")
+            c.drawString(
+                100, 660, "Known For: Forrest Gump, Cast Away, Saving Private Ryan"
+            )
+            c.drawString(100, 640, "Born: July 9, 1956")
+            c.drawString(100, 620, "Nationality: American")
+            c.save()
+        except ImportError:
+            # If reportlab not available, create a minimal placeholder PDF
+            TEST_PDF_PATH.write_text("placeholder PDF file for testing")
+
 
 @pytest.mark.skipif(not os.getenv("OPENAI_API_KEY"), reason="OpenAI API key not found")
 def test_call_ai():
@@ -112,6 +151,69 @@ def test_call_ai():
     )
     assert isinstance(response, str)
     assert len(response) > 0
+
+
+@pytest.mark.skipif(not os.getenv("OPENAI_API_KEY"), reason="OpenAI API key not found")
+def test_call_ai_with_pdf():
+    """Integration test: Test call_ai with PDF file input using OpenAI"""
+
+    # Create messages with PDF using MessageBuilder
+    messages = (
+        MessageBuilder()
+        .add_system(
+            "You are a helpful assistant. Extract information from documents accurately."
+        )
+        .add_user("What is the name of the actor mentioned in this PDF?")
+        .add_pdf(str(TEST_PDF_PATH))
+        .build()
+    )
+
+    # Test the call_ai wrapper function with PDF
+    response, cost = call_ai(
+        model="openai/gpt-4o",
+        messages=messages,
+        temperature=0,
+        max_tokens=150,
+    )
+
+    # Validate response
+    assert isinstance(response, str)
+    assert len(response) > 0
+    assert (
+        "tom hanks" in response.lower()
+    ), f"Expected response to contain 'Tom Hanks', got: {response}"
+
+    # Validate cost structure
+    assert isinstance(cost, (int, float))
+    assert cost >= 0
+
+    print(f"✅ OpenAI PDF analysis test passed! Response: {response}")
+
+
+@pytest.mark.skipif(not os.getenv("OPENAI_API_KEY"), reason="OpenAI API key not found")
+def test_call_ai_with_pdf_using_messages():
+    """Integration test: Test call_ai with PDF using raw message format"""
+
+    # Test with raw message format (not using MessageBuilder)
+    response, cost = call_ai(
+        model="openai/gpt-4o-mini",
+        messages=PDF_MESSAGES,
+        temperature=0,
+        max_tokens=150,
+    )
+
+    # Validate response
+    assert isinstance(response, str)
+    assert len(response) > 0
+    assert (
+        "tom hanks" in response.lower()
+    ), f"Expected response to contain 'Tom Hanks', got: {response}"
+
+    # Validate cost structure
+    assert isinstance(cost, (int, float))
+    assert cost >= 0
+
+    print(f"✅ OpenAI PDF (raw messages) test passed! Response: {response}")
 
 
 # Helper function for dynamic Bedrock model selection
@@ -1570,6 +1672,62 @@ def test_azure_openai_simple():
     print(f"Response: {response}")
 
 
+@pytest.mark.skipif(
+    not (os.getenv("AZURE_OPENAI_ENDPOINT") and os.getenv("AZURE_OPENAI_API_KEY")),
+    reason="Azure OpenAI credentials not found",
+)
+def test_azure_openai_with_pdf():
+    """Integration test: Test Azure OpenAI with PDF file input"""
+
+    # Get deployment name from environment or use default
+    deployments = os.getenv("AZURE_OPENAI_DEPLOYMENTS", "ai-parsing-gpt-5-chat")
+    deployment = deployments.split(",")[0].strip()
+
+    # Create messages with PDF using MessageBuilder
+    messages = (
+        MessageBuilder()
+        .add_system(
+            "You are a helpful assistant. Extract information from documents accurately."
+        )
+        .add_user("What is the name of the actor mentioned in this PDF?")
+        .add_pdf(str(TEST_PDF_PATH))
+        .build()
+    )
+
+    try:
+        # Test the call_ai wrapper function with PDF
+        response, cost = call_ai(
+            model=f"azure/{deployment}",
+            messages=messages,
+            temperature=0,
+            max_tokens=150,
+        )
+
+        # Validate response
+        assert isinstance(response, str)
+        assert len(response) > 0
+        assert (
+            "tom hanks" in response.lower()
+        ), f"Expected response to contain 'Tom Hanks', got: {response}"
+
+        # Validate cost structure
+        assert isinstance(cost, (int, float))
+        assert cost >= 0
+
+        print(f"✅ Azure OpenAI PDF analysis test passed! Response: {response}")
+
+    except Exception as e:
+        error_msg = str(e).lower()
+        # Check if this is a model capability issue
+        if any(err in error_msg for err in ["not support", "invalid", "capability"]):
+            pytest.skip(
+                f"Azure deployment may not support PDF inputs. "
+                f"Ensure you're using a vision-capable model like gpt-4o. Error: {e}"
+            )
+        else:
+            raise
+
+
 @pytest.mark.skipif(not os.getenv("GOOGLE_API_KEY"), reason="Google API key not found")
 def test_call_ai_gemini_25_pro():
     """Integration test: Test call_ai wrapper with Gemini 2.5 Pro"""
@@ -1716,3 +1874,55 @@ def test_call_ai_gemini_25_models_parametrized(model_id, model_name):
             pytest.skip(f"{model_name} not accessible: {e}")
         else:
             raise
+
+
+@pytest.mark.skipif(not os.getenv("OPENAI_API_KEY"), reason="OpenAI API key not found")
+def test_call_ai_gpt_5_1_instant():
+    """Integration test: Test call_ai wrapper with OpenAI GPT-5.1 Instant"""
+
+    # Test with GPT-5.1 Instant
+    response, cost = call_ai(
+        model="openai/gpt-5.1-2025-11-13",
+        messages=TEXT_MESSAGES,
+        temperature=0,
+        max_tokens=150,
+    )
+
+    # Validate response
+    assert isinstance(response, str)
+    assert len(response) > 0
+    assert (
+        "TEST_RESPONSE_123" in response
+    ), f"Expected 'TEST_RESPONSE_123', got: {response}"
+
+    # Validate cost structure
+    assert isinstance(cost, (int, float))
+    assert cost >= 0
+
+    print(f"✅ OpenAI GPT-5.1 Instant access confirmed! Response: {response[:100]}...")
+
+
+@pytest.mark.skipif(not os.getenv("GOOGLE_API_KEY"), reason="Google API key not found")
+def test_call_ai_gemini_3_pro_preview():
+    """Integration test: Test call_ai wrapper with Gemini 3 Pro Preview"""
+
+    # Test with Gemini 3 Pro Preview
+    response, cost = call_ai(
+        model="gemini/gemini-3-pro-preview",
+        messages=TEXT_MESSAGES,
+        temperature=0,
+        max_tokens=150,
+    )
+
+    # Validate response
+    assert isinstance(response, str)
+    assert len(response) > 0
+    assert (
+        "TEST_RESPONSE_123" in response
+    ), f"Expected 'TEST_RESPONSE_123', got: {response}"
+
+    # Validate cost structure
+    assert isinstance(cost, (int, float))
+    assert cost >= 0
+
+    print(f"✅ Gemini 3 Pro Preview access confirmed! Response: {response[:100]}...")
