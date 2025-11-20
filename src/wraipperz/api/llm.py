@@ -1661,6 +1661,10 @@ class GeminiProvider(AIProvider):
                             category="HARM_CATEGORY_HATE_SPEECH", threshold="BLOCK_NONE"
                         ),
                         types.SafetySetting(
+                            category="HARM_CATEGORY_CIVIC_INTEGRITY",
+                            threshold="BLOCK_NONE",
+                        ),
+                        types.SafetySetting(
                             category="HARM_CATEGORY_HARASSMENT", threshold="BLOCK_NONE"
                         ),
                         types.SafetySetting(
@@ -1675,7 +1679,19 @@ class GeminiProvider(AIProvider):
                     **config_kwargs,
                 ),
             )
-            return response.text
+            if response.text:
+                return response.text
+
+            # If no text, check why
+            if response.candidates:
+                candidate = response.candidates[0]
+                if candidate.finish_reason:
+                    # Raise a helpful error about why it stopped
+                    raise ValueError(
+                        f"Gemini refused response. Finish Reason: {candidate.finish_reason}"
+                    )
+
+            return ""  # Or raise an error if empty is unacceptable
         except Exception as e:
             raise e
 
@@ -1780,6 +1796,10 @@ class GeminiProvider(AIProvider):
                             threshold="BLOCK_NONE",
                         ),
                         types.SafetySetting(
+                            category="HARM_CATEGORY_CIVIC_INTEGRITY",
+                            threshold="BLOCK_NONE",
+                        ),
+                        types.SafetySetting(
                             category="HARM_CATEGORY_DANGEROUS_CONTENT",
                             threshold="BLOCK_NONE",
                         ),
@@ -1787,7 +1807,20 @@ class GeminiProvider(AIProvider):
                     **config_kwargs,
                 ),
             )
-            return response.text
+
+            if response.text:
+                return response.text
+
+            # If no text, check why
+            if response.candidates:
+                candidate = response.candidates[0]
+                if candidate.finish_reason:
+                    # Raise a helpful error about why it stopped
+                    raise ValueError(
+                        f"Gemini refused response. Finish Reason: {candidate.finish_reason}"
+                    )
+
+            return ""  # Or raise an error if empty is unacceptable
         except Exception as e:
             raise e
 
@@ -1886,6 +1919,10 @@ class GeminiProvider(AIProvider):
                 safety_settings=[
                     types.SafetySetting(
                         category="HARM_CATEGORY_HATE_SPEECH", threshold="BLOCK_NONE"
+                    ),
+                    types.SafetySetting(
+                        category="HARM_CATEGORY_CIVIC_INTEGRITY",
+                        threshold="BLOCK_NONE",
                     ),
                     types.SafetySetting(
                         category="HARM_CATEGORY_HARASSMENT", threshold="BLOCK_NONE"

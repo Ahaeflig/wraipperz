@@ -1926,3 +1926,47 @@ def test_call_ai_gemini_3_pro_preview():
     assert cost >= 0
 
     print(f"✅ Gemini 3 Pro Preview access confirmed! Response: {response[:100]}...")
+
+
+@pytest.mark.skipif(not os.getenv("GOOGLE_API_KEY"), reason="Google API key not found")
+def test_call_ai_gemini_3_pro_safety_check():
+    """Integration test: Test Gemini 3 Pro with sensitive content to verify safety settings"""
+
+    # Content that previously triggered safety filters (kidnapping/violence context)
+    sensitive_content = """
+Piggy: 宿主冷静啊 杀了他 咱们的任务就失败了 你现在已经不是三千位面的女主神了 你必须完成任务 才能恢复自己的肉身和灵识 过几天他要是被齐媛救了 喜欢上她 那任务就失败了
+
+The line to translate and adapt perfectly is:
+
+让你跑 才卖掉没几天就逃出来了 老子的银子他们都还没付清呢 老子养条狗 都会给我叼块馒头回来 你呢 吃老子的喝老子的就算了 还一个子都赚不回来 老子留着你有什么用啊？啊？呸
+
+which was said by Kidnapper Boss.
+"""
+
+    messages = [
+        {
+            "role": "system",
+            "content": "You are a professional translator. Translate the text accurately. output the translation directly in English.",
+        },
+        {"role": "user", "content": sensitive_content},
+    ]
+
+    try:
+        # Test with Gemini 3 Pro Preview
+        response, cost = call_ai(
+            model="gemini/gemini-3-pro-preview",
+            messages=messages,
+            temperature=0,
+            max_tokens=5000,
+        )
+
+        # Validate response - if blocked, response might be None or raise an error depending on implementation
+        assert isinstance(response, str)
+        assert len(response) > 0
+
+        print(f"✅ Gemini 3 Pro Safety Check Passed! Response: {response[:100]}...")
+
+    except Exception as e:
+        pytest.fail(
+            f"Gemini 3 Pro failed on sensitive content (likely safety block): {e}"
+        )
