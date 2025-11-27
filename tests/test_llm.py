@@ -491,6 +491,7 @@ def test_call_ai_bedrock_claude_opus_4_with_image():
         ("anthropic.claude-3-5-sonnet-20241022-v2:0", "SONNET_35_V2_BEDROCK_TEST"),
         ("anthropic.claude-opus-4-20250514-v1:0", "OPUS_4_BEDROCK_TEST"),
         ("anthropic.claude-sonnet-4-20250514-v1:0", "SONNET_4_BEDROCK_TEST"),
+        ("anthropic.claude-opus-4-5-20251101-v1:0", "OPUS_45_BEDROCK_TEST"),
     ],
 )
 @pytest.mark.skipif(
@@ -620,6 +621,63 @@ def test_call_ai_anthropic_claude_sonnet_4_with_image():
     # Validate cost structure
     assert isinstance(cost, (int, float))
     assert cost >= 0
+
+
+# ===== ANTHROPIC MODELS ACCESSIBILITY TEST =====
+
+
+@pytest.mark.parametrize(
+    "model_id,expected_text",
+    [
+        ("anthropic/claude-sonnet-4-20250514", "SONNET_4_TEST"),
+        ("anthropic/claude-opus-4-20250514", "OPUS_4_TEST"),
+        ("anthropic/claude-opus-4-5-20251101", "OPUS_45_TEST"),
+    ],
+)
+@pytest.mark.skipif(
+    not os.getenv("ANTHROPIC_API_KEY"), reason="Anthropic API key not found"
+)
+def test_call_ai_anthropic_models_parametrized(model_id, expected_text):
+    """Parametrized test for multiple Anthropic Claude models accessibility"""
+
+    messages = (
+        MessageBuilder()
+        .add_system(
+            f"You are a helpful assistant. You must respond with exactly: '{expected_text}'"
+        )
+        .add_user("Please provide the required test response.")
+        .build()
+    )
+
+    try:
+        response, cost = call_ai(
+            model=model_id, messages=messages, temperature=0, max_tokens=150
+        )
+
+        assert isinstance(response, str)
+        assert len(response) > 0
+        assert expected_text in response, f"Expected '{expected_text}', got: {response}"
+        assert isinstance(cost, (int, float))
+        assert cost >= 0
+
+        print(f"✅ {model_id} access confirmed!")
+
+    except Exception as e:
+        error_msg = str(e).lower()
+        if any(
+            access_error in error_msg
+            for access_error in [
+                "model not found",
+                "invalid model",
+                "not available",
+                "access",
+                "permission",
+                "unauthorized",
+            ]
+        ):
+            pytest.skip(f"{model_id} not accessible: {e}")
+        else:
+            raise
 
 
 # ===== REASONING MODELS TESTS (o1, o3 series) =====
@@ -860,6 +918,7 @@ def test_call_ai_vertex_claude_sonnet_4():
     [
         ("vertex/claude-opus-4@20250514", "VERTEX_OPUS_4_TEST"),
         ("vertex/claude-sonnet-4@20250514", "VERTEX_SONNET_4_TEST"),
+        ("vertex/claude-opus-4-5@20251101", "VERTEX_OPUS_45_TEST"),
     ],
 )
 @pytest.mark.skipif(

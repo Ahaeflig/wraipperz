@@ -1,6 +1,6 @@
 [project]
 name = "wraipperz"
-version = "0.1.50"
+version = "0.1.51"
 description = "Simple wrappers for various AI APIs including LLMs, ASR, and TTS"
 readme = "README.md"
 authors = [{ name = "Adan Häfliger", email = "adan.haefliger@gmail.com" }]
@@ -8,7 +8,7 @@ requires-python = ">=3.11"
 dependencies = [
     "anthropic>=0.49.0",
     "boto3>=1.38.31",
-    "cartesia==2.0.0",
+    "cartesia>=2.0.17",
     "deepgram-sdk>=3.10.1",
     "fal-client>=0.5.9",
     "google-genai>=1.5.0",

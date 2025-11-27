@@ -659,6 +659,7 @@ class AnthropicProvider(AIProvider):
         "anthropic/claude-2.0",
         "anthropic/claude-opus-4-20250514",
         "anthropic/claude-sonnet-4-20250514",
+        "anthropic/claude-opus-4-5-20251101",
     ]
 
     # Models that support extended thinking (reasoning capabilities)
@@ -666,6 +667,7 @@ class AnthropicProvider(AIProvider):
         "anthropic/claude-opus-4-20250514",
         "anthropic/claude-sonnet-4-20250514",
         "anthropic/claude-3-7-sonnet-20250219",
+        "anthropic/claude-opus-4-5-20251101",
     ]
 
     def __init__(self, api_key=None):
@@ -1107,6 +1109,7 @@ class VertexAIProvider(AIProvider):
     supported_models = [
         "vertex/claude-opus-4@20250514",
         "vertex/claude-sonnet-4@20250514",
+        "vertex/claude-opus-4-5@20251101",
     ]
 
     def __init__(self, project_id=None, location=None):
@@ -2039,6 +2042,7 @@ class BedrockProvider(AIProvider):
         "bedrock/anthropic.claude-3-7-sonnet-20250219-v1:0",
         "bedrock/anthropic.claude-opus-4-20250514-v1:0",
         "bedrock/anthropic.claude-sonnet-4-20250514-v1:0",
+        "bedrock/anthropic.claude-opus-4-5-20251101-v1:0",
         "bedrock/anthropic.claude-v2:1",
         "bedrock/anthropic.claude-v2",
         "bedrock/anthropic.claude-instant-v1",
@@ -2049,6 +2053,7 @@ class BedrockProvider(AIProvider):
         "bedrock/apac.anthropic.claude-3-5-sonnet-20241022-v2:0",
         "bedrock/apac.anthropic.claude-3-7-sonnet-20250219-v1:0",
         "bedrock/apac.anthropic.claude-sonnet-4-20250514-v1:0",
+        "bedrock/apac.anthropic.claude-opus-4-5-20251101-v1:0",
         # Anthropic Claude Models - US Inference Profiles
         "bedrock/us.anthropic.claude-3-haiku-20240307-v1:0",
         "bedrock/us.anthropic.claude-3-opus-20240229-v1:0",
@@ -2059,6 +2064,7 @@ class BedrockProvider(AIProvider):
         "bedrock/us.anthropic.claude-3-7-sonnet-20250219-v1:0",
         "bedrock/us.anthropic.claude-opus-4-20250514-v1:0",
         "bedrock/us.anthropic.claude-sonnet-4-20250514-v1:0",
+        "bedrock/us.anthropic.claude-opus-4-5-20251101-v1:0",
         # Anthropic Claude Models - EU Inference Profiles
         "bedrock/eu.anthropic.claude-3-haiku-20240307-v1:0",
         "bedrock/eu.anthropic.claude-3-opus-20240229-v1:0",
@@ -2069,6 +2075,7 @@ class BedrockProvider(AIProvider):
         "bedrock/eu.anthropic.claude-3-7-sonnet-20250219-v1:0",
         "bedrock/eu.anthropic.claude-opus-4-20250514-v1:0",
         "bedrock/eu.anthropic.claude-sonnet-4-20250514-v1:0",
+        "bedrock/eu.anthropic.claude-opus-4-5-20251101-v1:0",
         # Amazon Nova Models
         "bedrock/amazon.nova-lite-v1:0",
         "bedrock/amazon.nova-micro-v1:0",
