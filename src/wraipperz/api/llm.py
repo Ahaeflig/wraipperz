@@ -4,6 +4,7 @@ import io
 import json
 import mimetypes
 import os
+import threading
 import time
 
 # from tokencost import calculate_prompt_cost, calculate_completion_cost
@@ -2800,77 +2801,91 @@ async def generate_async_with_retry(
 
 class AIManagerSingleton:
     _instance = None
+    _lock = threading.Lock()
 
     @classmethod
     def get_instance(cls):
         if cls._instance is None:
-            cls._instance = AIManager()
-            # Initialize providers only when needed
-            if os.getenv("OPENAI_API_KEY"):
-                try:
-                    cls._instance.add_provider(OpenAIProvider())
-                except Exception as e:
-                    print(f"Error adding OpenAI provider: {e}")
+            with cls._lock:
+                if cls._instance is None:
+                    instance = AIManager()
+                    # Initialize providers only when needed
+                    if os.getenv("OPENAI_API_KEY"):
+                        try:
+                            instance.add_provider(OpenAIProvider())
+                        except Exception as e:
+                            print(f"Error adding OpenAI provider: {e}")
 
-            # Add Azure OpenAI provider
-            if os.getenv("AZURE_OPENAI_ENDPOINT") and os.getenv("AZURE_OPENAI_API_KEY"):
-                try:
-                    cls._instance.add_provider(AzureOpenAIProvider())
-                except Exception as e:
-                    print(f"Error adding Azure OpenAI provider: {e}")
+                    # Add Azure OpenAI provider
+                    if os.getenv("AZURE_OPENAI_ENDPOINT") and os.getenv(
+                        "AZURE_OPENAI_API_KEY"
+                    ):
+                        try:
+                            instance.add_provider(AzureOpenAIProvider())
+                        except Exception as e:
+                            print(f"Error adding Azure OpenAI provider: {e}")
 
-            if os.getenv("ANTHROPIC_API_KEY"):
-                try:
-                    cls._instance.add_provider(AnthropicProvider())
-                except Exception as e:
-                    print(f"Error adding Anthropic provider: {e}")
+                    if os.getenv("ANTHROPIC_API_KEY"):
+                        try:
+                            instance.add_provider(AnthropicProvider())
+                        except Exception as e:
+                            print(f"Error adding Anthropic provider: {e}")
 
-            # Add Vertex AI provider if required environment variables are set
-            if (
-                VERTEX_AVAILABLE
-                and os.getenv("VERTEX_PROJECT_ID")
-                and os.getenv("GOOGLE_APPLICATION_CREDENTIALS")
-            ):
-                try:
-                    cls._instance.add_provider(VertexAIProvider())
-                except Exception as e:
-                    print(f"Error adding Vertex AI provider: {e}")
+                    # Add Vertex AI provider if required environment variables are set
+                    if (
+                        VERTEX_AVAILABLE
+                        and os.getenv("VERTEX_PROJECT_ID")
+                        and os.getenv("GOOGLE_APPLICATION_CREDENTIALS")
+                    ):
+                        try:
+                            instance.add_provider(VertexAIProvider())
+                        except Exception as e:
+                            print(f"Error adding Vertex AI provider: {e}")
 
-            if os.getenv("GOOGLE_API_KEY"):
-                try:
-                    cls._instance.add_provider(GeminiProvider())
-                except Exception as e:
-                    print(f"Error adding Gemini provider: {e}")
-            if os.getenv("DEEPSEEK_API_KEY"):
-                try:
-                    cls._instance.add_provider(DeepSeekProvider())
-                except Exception as e:
-                    print(f"Error adding DeepSeek provider: {e}")
+                    if os.getenv("GOOGLE_API_KEY"):
+                        try:
+                            instance.add_provider(GeminiProvider())
+                        except Exception as e:
+                            print(f"Error adding Gemini provider: {e}")
+                    if os.getenv("DEEPSEEK_API_KEY"):
+                        try:
+                            instance.add_provider(DeepSeekProvider())
+                        except Exception as e:
+                            print(f"Error adding DeepSeek provider: {e}")
 
-            # Add Bedrock provider if boto3 is available and AWS credentials are set
-            if BEDROCK_AVAILABLE and (
-                (os.getenv("AWS_ACCESS_KEY_ID") and os.getenv("AWS_SECRET_ACCESS_KEY"))
-                or os.getenv("AWS_PROFILE")
-                or os.getenv("AWS_DEFAULT_REGION")
-            ):
-                try:
-                    bedrock_region = os.getenv("AWS_DEFAULT_REGION", "us-east-1")
-                    cls._instance.add_provider(
-                        BedrockProvider(region_name=bedrock_region)
-                    )
-                except Exception as e:
-                    print(f"Error adding Bedrock provider: {e}")
-
-            if os.getenv("LMSTUDIO_IP") and os.getenv("LMSTUDIO_PORT"):
-                try:
-                    cls._instance.add_provider(
-                        LMStudioProvider(
-                            ip_address=os.getenv("LMSTUDIO_IP", "192.168.11.34"),
-                            port=int(os.getenv("LMSTUDIO_PORT", "1234")),
+                    # Add Bedrock provider if boto3 is available and AWS credentials are set
+                    if BEDROCK_AVAILABLE and (
+                        (
+                            os.getenv("AWS_ACCESS_KEY_ID")
+                            and os.getenv("AWS_SECRET_ACCESS_KEY")
                         )
-                    )
-                except Exception as e:
-                    print(f"Error adding LMStudio provider: {e}")
+                        or os.getenv("AWS_PROFILE")
+                        or os.getenv("AWS_DEFAULT_REGION")
+                    ):
+                        try:
+                            bedrock_region = os.getenv(
+                                "AWS_DEFAULT_REGION", "us-east-1"
+                            )
+                            instance.add_provider(
+                                BedrockProvider(region_name=bedrock_region)
+                            )
+                        except Exception as e:
+                            print(f"Error adding Bedrock provider: {e}")
+
+                    if os.getenv("LMSTUDIO_IP") and os.getenv("LMSTUDIO_PORT"):
+                        try:
+                            instance.add_provider(
+                                LMStudioProvider(
+                                    ip_address=os.getenv(
+                                        "LMSTUDIO_IP", "192.168.11.34"
+                                    ),
+                                    port=int(os.getenv("LMSTUDIO_PORT", "1234")),
+                                )
+                            )
+                        except Exception as e:
+                            print(f"Error adding LMStudio provider: {e}")
+
+                    cls._instance = instance
 
         return cls._instance
 

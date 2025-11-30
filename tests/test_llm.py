@@ -2029,3 +2029,46 @@ which was said by Kidnapper Boss.
         pytest.fail(
             f"Gemini 3 Pro failed on sensitive content (likely safety block): {e}"
         )
+
+
+def test_parallel_initialization_race_condition():
+    """Test that AIManagerSingleton handles parallel initialization correctly."""
+    import concurrent.futures
+
+    from wraipperz.api.llm import AIManagerSingleton
+
+    # Reset singleton for this test
+    # Note: This modifies global state, but since it's a singleton,
+    # subsequent tests will just use this re-initialized instance.
+    _ = AIManagerSingleton._instance
+    AIManagerSingleton._instance = None
+
+    try:
+        # Function to be run in parallel
+        def get_manager_instance():
+            return AIManagerSingleton.get_instance()
+
+        # Run multiple threads trying to get the instance simultaneously
+        num_threads = 20
+        with concurrent.futures.ThreadPoolExecutor(max_workers=num_threads) as executor:
+            futures = [
+                executor.submit(get_manager_instance) for _ in range(num_threads)
+            ]
+            results = []
+            for future in concurrent.futures.as_completed(futures):
+                results.append(future.result())
+
+        # Verify all threads got an instance
+        assert len(results) == num_threads
+
+        # Verify all instances are the same object (Singleton property)
+        first_instance = results[0]
+        for instance in results[1:]:
+            assert instance is first_instance, "All instances should be the same object"
+
+        print("✅ Parallel initialization test passed!")
+
+    finally:
+        # Optional: Restore old instance if needed, though the new one should be valid too
+        # AIManagerSingleton._instance = old_instance
+        pass
