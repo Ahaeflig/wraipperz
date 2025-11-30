@@ -1,11 +1,12 @@
 from __future__ import annotations
-from typing import List, Dict, Union, Optional
+
 from pathlib import Path
+from typing import Any, Dict, List, Optional, Union
 
 
 class Message:
     def __init__(
-        self, role: str = "user", content: Union[str, List[Dict]] = ""
+        self, role: str = "user", content: Union[str, List[Dict[str, Any]]] = ""
     ) -> None:
         """Initialize a message with a role and content.
 

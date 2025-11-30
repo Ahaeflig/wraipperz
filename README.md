@@ -255,3 +255,86 @@ MIT
 ## Contributing
 
 Contributions are welcome! Please feel free to submit a Pull Request.
+
+
+## quick parsing example
+
+```python
+import asyncio
+from typing import List, Optional
+from pydantic import BaseModel, Field, ConfigDict
+from wraipperz import call_ai, call_ai_async, yaml_extract_validate_repair, MessageBuilder, pydantic_to_yaml_example,
+
+# --- 1. Define your Model ---
+class Actor(BaseModel):
+    model_config = ConfigDict(extra="ignore")
+
+    first_name: str = Field(
+        json_schema_extra={"comment": "First name of the actor", "example": "Yuki"}
+    )
+    last_name: str = Field(
+        json_schema_extra={"comment": "Last name of the actor", "example": "Tanaka"}
+    )
+    languages: Optional[List[str]] = Field(
+        default=[],
+        json_schema_extra={
+            "example": ["ja", "en"],
+            "comment": "Languages spoken by the actor",
+        },
+    )
+
+# --- 2. Helper for Instructions ---
+def format_instructions(template: str) -> str:
+    return f"""
+    You are a data extraction assistant.
+    Extract information from the text below and output it in strictly valid YAML format.
+
+    Follow this schema exactly:
+\`\`\`yaml
+{template}
+\`\`\`
+"""
+
+async def main():
+    # --- 3. Setup Context ---
+    input_text = "Page 1: Meet Yuki Tanaka. She speaks Japanese and English fluently."
+
+    # Generate YAML template from Pydantic model
+    template = pydantic_to_yaml_example(Actor)
+
+    # Build the prompt
+    messages = (
+        MessageBuilder()
+        .add_system(format_instructions(template))
+        .add_user(input_text)
+        .build()
+    )
+
+    print("Calling AI...")
+
+    # --- 4. Call AI ---
+    response_text, _ = await call_ai_async(
+        model="gemini/gemini-2.0-flash", # Or "claude-3-5-sonnet-20240620", etc.
+        messages=messages,
+        temperature=0,
+        max_tokens=4096,
+    )
+
+    # --- 5. Extract, Validate & Heal (The Magic Step) ---
+    try:
+        actor: Actor = yaml_extract_validate_repair(
+            model="gemini/gemini-2.0-flash", # Model used for healing if validation fails
+            text=response_text,
+            model_class=Actor,
+            max_retries=3
+        )
+
+        print(f"Success! Extracted actor: {actor.first_name} {actor.last_name}")
+        print(f"Languages: {actor.languages}")
+
+    except ValueError as e:
+        print(f"Failed to extract actor after retries: {e}")
+
+if __name__ == "__main__":
+    asyncio.run(main())
+```

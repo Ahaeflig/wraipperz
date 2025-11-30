@@ -8,7 +8,7 @@ import time
 
 # from tokencost import calculate_prompt_cost, calculate_completion_cost
 from pathlib import Path
-from typing import List
+from typing import Any, Dict, List, Tuple
 
 import anthropic
 import requests
@@ -62,19 +62,47 @@ load_dotenv(override=True)
 
 class AIProvider(abc.ABC):
     @abc.abstractmethod
-    def call_ai(self, messages, temperature, max_tokens, model, **kwargs):
+    def call_ai(
+        self,
+        messages: List[Message],
+        temperature: float,
+        max_tokens: int,
+        model: str,
+        **kwargs: Dict[str, Any],
+    ) -> str:
         pass
 
     @abc.abstractmethod
-    async def call_ai_async(self, messages, temperature, max_tokens, model, **kwargs):
+    async def call_ai_async(
+        self,
+        messages: List[Message],
+        temperature: float,
+        max_tokens: int,
+        model: str,
+        **kwargs: Dict[str, Any],
+    ) -> str:
         pass
 
     @abc.abstractmethod
-    def generate(self, messages, temperature, max_tokens, model, **kwargs):
+    def generate(
+        self,
+        messages: List[Message],
+        temperature: float,
+        max_tokens: int,
+        model: str,
+        **kwargs: Dict[str, Any],
+    ) -> str:
         pass
 
     @abc.abstractmethod
-    async def generate_async(self, messages, temperature, max_tokens, model, **kwargs):
+    async def generate_async(
+        self,
+        messages: List[Message],
+        temperature: float,
+        max_tokens: int,
+        model: str,
+        **kwargs: Dict[str, Any],
+    ) -> str:
         pass
 
 
@@ -2848,8 +2876,12 @@ class AIManagerSingleton:
 
 
 def call_ai(
-    model: str, messages: List[Message], temperature=0.1, max_tokens=4096, **kwargs
-):
+    model: str,
+    messages: List[Message],
+    temperature: float = 0.1,
+    max_tokens: int = 4096,
+    **kwargs: Dict[str, Any],
+) -> Tuple[str, float]:
     ai_manager = AIManagerSingleton.get_instance()
     return call_ai_with_retry(
         ai_manager, messages, temperature, max_tokens, model, **kwargs
@@ -2857,8 +2889,12 @@ def call_ai(
 
 
 def call_ai_async(
-    model: str, messages: List[Message], temperature=0.1, max_tokens=4096, **kwargs
-):
+    model: str,
+    messages: List[Message],
+    temperature: float = 0.1,
+    max_tokens: int = 4096,
+    **kwargs: Dict[str, Any],
+) -> Tuple[str, float]:
     ai_manager = AIManagerSingleton.get_instance()
     return call_ai_async_with_retry(
         ai_manager, messages, temperature, max_tokens, model, **kwargs
@@ -2866,8 +2902,12 @@ def call_ai_async(
 
 
 def generate(
-    model: str, messages: List[Message], temperature=0.1, max_tokens=4096, **kwargs
-):
+    model: str,
+    messages: List[Message],
+    temperature: float = 0.1,
+    max_tokens: int = 4096,
+    **kwargs: Dict[str, Any],
+) -> Tuple[str, float]:
     ai_manager = AIManagerSingleton.get_instance()
     return generate_with_retry(
         ai_manager, messages, temperature, max_tokens, model, **kwargs
@@ -2875,8 +2915,12 @@ def generate(
 
 
 async def generate_async(
-    model: str, messages: List[Message], temperature=0.1, max_tokens=4096, **kwargs
-):
+    model: str,
+    messages: List[Message],
+    temperature: float = 0.1,
+    max_tokens: int = 4096,
+    **kwargs: Dict[str, Any],
+) -> Tuple[str, float]:
     ai_manager = AIManagerSingleton.get_instance()
     return generate_async_with_retry(
         ai_manager, messages, temperature, max_tokens, model, **kwargs
