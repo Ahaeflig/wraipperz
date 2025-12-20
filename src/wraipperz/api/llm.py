@@ -9,7 +9,7 @@ import time
 
 # from tokencost import calculate_prompt_cost, calculate_completion_cost
 from pathlib import Path
-from typing import Any, ClassVar, Dict, List, Optional, Tuple, Union
+from typing import Any, ClassVar, Dict, List, Optional, Tuple, Union, cast
 
 import anthropic
 import requests
@@ -35,33 +35,39 @@ from tenacity import (
     wait_exponential,
 )
 
-# AWS Bedrock imports
-try:
-    import boto3
-    from botocore.exceptions import BotoCoreError, ClientError
+from .messages import Message
 
-    BEDROCK_AVAILABLE = True
+# AWS Bedrock imports
+BEDROCK_AVAILABLE: bool = False
+try:
+    import boto3  # type: ignore[import-untyped]
+    from botocore.exceptions import (  # type: ignore[import-untyped]
+        BotoCoreError,
+        ClientError,
+    )
+
+    BEDROCK_AVAILABLE = True  # pyright: ignore[reportConstantRedefinition]
 except ImportError:
-    BEDROCK_AVAILABLE = False
-    boto3 = None
-    BotoCoreError = Exception
-    ClientError = Exception
+    boto3 = None  # type: ignore[assignment]
+    BotoCoreError = Exception  # type: ignore[misc, assignment]
+    ClientError = Exception  # type: ignore[misc, assignment]
 
 # Vertex AI imports
+VERTEX_AVAILABLE: bool = False
 try:
     from anthropic import AnthropicVertex
 
-    VERTEX_AVAILABLE = True
+    VERTEX_AVAILABLE = True  # pyright: ignore[reportConstantRedefinition]
 except ImportError:
-    VERTEX_AVAILABLE = False
-    AnthropicVertex = None
+    AnthropicVertex = None  # type: ignore[misc, assignment]
 
-from .messages import Message
 
 load_dotenv(override=True)
 
 
 class AIProvider(abc.ABC):
+    supported_models: List[str] = []
+
     @abc.abstractmethod
     def call_ai(
         self,
@@ -92,7 +98,7 @@ class AIProvider(abc.ABC):
         max_tokens: int,
         model: str,
         **kwargs: Any,
-    ) -> str:
+    ) -> Union[str, Dict[str, Any]]:
         pass
 
     @abc.abstractmethod
@@ -103,7 +109,7 @@ class AIProvider(abc.ABC):
         max_tokens: int,
         model: str,
         **kwargs: Any,
-    ) -> str:
+    ) -> Union[str, Dict[str, Any]]:
         pass
 
 
@@ -227,7 +233,7 @@ class OpenAIProvider(AIProvider):
 
         try:
             # Get models from API - only include chat/text generation models
-            api_models = []
+            api_models: List[str] = []
             models_response = self.sync_client.models.list()
 
             for model in models_response.data:
@@ -252,7 +258,7 @@ class OpenAIProvider(AIProvider):
                 api_models.append(prefixed_model)
 
             # Add models that might not be returned by API (limited access/beta models)
-            beta_models = [
+            beta_models: List[str] = [
                 "openai/o3",
                 "openai/o3-2025-04-16",
                 "openai/o3-pro",
@@ -265,7 +271,9 @@ class OpenAIProvider(AIProvider):
             # Add the API models to our supported models, avoiding duplicates
             if api_models:
                 existing_models = set(self.supported_models)
-                new_models = [m for m in api_models if m not in existing_models]
+                new_models: List[str] = [
+                    m for m in api_models if m not in existing_models
+                ]
                 self.supported_models.extend(new_models)
 
         except Exception as e:
@@ -286,18 +294,18 @@ class OpenAIProvider(AIProvider):
                 api_params = self._prepare_reasoning_params(
                     messages, temperature, max_tokens, model, **kwargs
                 )
-                response = self.sync_client.chat.completions.create(**api_params)
+                response = self.sync_client.chat.completions.create(**api_params)  # type: ignore[arg-type]
             else:
                 # Standard model handling
                 prepared_messages = self._prepare_messages(messages)
                 response = self.sync_client.chat.completions.create(
                     model=model.split("/")[-1],
-                    messages=prepared_messages,
+                    messages=cast(Any, prepared_messages),
                     temperature=temperature,
                     max_tokens=max_tokens,
                     **kwargs,
                 )
-            return response.choices[0].message.content
+            return response.choices[0].message.content or ""
         except Exception as e:
             raise e
 
@@ -315,18 +323,18 @@ class OpenAIProvider(AIProvider):
                 api_params = self._prepare_reasoning_params(
                     messages, temperature, max_tokens, model, **kwargs
                 )
-                response = await self.async_client.chat.completions.create(**api_params)
+                response = await self.async_client.chat.completions.create(**api_params)  # type: ignore[arg-type]
             else:
                 # Standard model handling
                 prepared_messages = self._prepare_messages(messages)
                 response = await self.async_client.chat.completions.create(
                     model=model.split("/")[-1],
-                    messages=prepared_messages,
+                    messages=cast(Any, prepared_messages),
                     temperature=temperature,
                     max_tokens=max_tokens,
                     **kwargs,
                 )
-            return response.choices[0].message.content
+            return response.choices[0].message.content or ""
         except Exception as e:
             raise e
 
@@ -379,7 +387,7 @@ class OpenAIProvider(AIProvider):
         model_name = model.split("/")[-1]
 
         # Handle system/developer messages based on model capabilities
-        prepared_messages = []
+        prepared_messages: List[Dict[str, Any]] = []
         for message in messages:
             if message["role"] == "system":
                 # Convert system to developer for newer models, or to user for older ones
@@ -401,15 +409,19 @@ class OpenAIProvider(AIProvider):
                     "o3-mini",
                 ] and isinstance(message.get("content"), list):
                     # Models that support vision need proper message preparation
-                    prepared_message = {"role": message["role"], "content": []}
-                    for item in message["content"]:
+                    prepared_content: List[Dict[str, Any]] = []
+                    prepared_message: Dict[str, Any] = {
+                        "role": message["role"],
+                        "content": prepared_content,
+                    }
+                    content_items: List[Any] = message["content"]
+                    for item in content_items:
                         if isinstance(item, dict) and item.get("type") == "image_url":
-                            image_data = self._process_media(item["image_url"]["url"])
-                            mime_type, _ = mimetypes.guess_type(
-                                item["image_url"]["url"]
-                            )
+                            image_url_value: str = str(item["image_url"]["url"])
+                            image_data = self._process_media(image_url_value)
+                            mime_type, _ = mimetypes.guess_type(image_url_value)
                             mime_type = mime_type or "image/jpeg"
-                            prepared_message["content"].append(
+                            prepared_content.append(
                                 {
                                     "type": "image_url",
                                     "image_url": {
@@ -418,13 +430,17 @@ class OpenAIProvider(AIProvider):
                                 }
                             )
                         else:
-                            prepared_message["content"].append(item)
+                            prepared_content.append(
+                                dict(item)
+                                if isinstance(item, dict)
+                                else {"value": item}
+                            )
                     prepared_messages.append(prepared_message)
                 else:
                     prepared_messages.append(message)
 
         # Remove unsupported parameters for reasoning models
-        cleaned_kwargs = {}
+        cleaned_kwargs: Dict[str, Any] = {}
         unsupported_params = {
             "temperature",
             "top_p",
@@ -440,7 +456,7 @@ class OpenAIProvider(AIProvider):
                 cleaned_kwargs[key] = value
 
         # Use max_completion_tokens instead of max_tokens
-        api_params = {
+        api_params: Dict[str, Any] = {
             "model": model_name,
             "messages": prepared_messages,
             "max_completion_tokens": max_tokens,
@@ -496,11 +512,13 @@ class OpenAIProvider(AIProvider):
             if isinstance(content, str):
                 prepared_messages.append({"role": message["role"], "content": content})
             elif isinstance(content, list):
-                prepared_content = []
-                for item in content:
+                prepared_content: List[Dict[str, Any]] = []
+                content_list: List[Any] = content
+                for item in content_list:
                     if isinstance(item, dict) and item.get("type") == "image_url":
-                        image_data = self._process_media(item["image_url"]["url"])
-                        mime_type, _ = mimetypes.guess_type(item["image_url"]["url"])
+                        image_url_val: str = str(item["image_url"]["url"])
+                        image_data = self._process_media(image_url_val)
+                        mime_type, _ = mimetypes.guess_type(image_url_val)
                         # Default to jpeg if we can't determine the type
                         mime_type = mime_type or "image/jpeg"
                         prepared_content.append(
@@ -513,13 +531,13 @@ class OpenAIProvider(AIProvider):
                         )
                     elif isinstance(item, dict) and item.get("type") == "input_url":
                         # Handle PDF files
-                        pdf_url = item["input_url"]["url"]
+                        pdf_url: str = str(item["input_url"]["url"])
                         if pdf_url.startswith("data:"):
                             # Already base64 encoded
-                            prepared_content.append(item)
+                            prepared_content.append(dict(item))
                         elif pdf_url.startswith(("http://", "https://")):
                             # URL - OpenAI can handle these directly
-                            prepared_content.append(item)
+                            prepared_content.append(dict(item))
                         else:
                             # Local file - need to encode
                             pdf_data = self._process_media(pdf_url)
@@ -539,7 +557,9 @@ class OpenAIProvider(AIProvider):
                         # prepared_content.append(item)
                         pass
                     else:
-                        prepared_content.append(item)
+                        prepared_content.append(
+                            dict(item) if isinstance(item, dict) else {"value": item}
+                        )
                 prepared_messages.append(
                     {"role": message["role"], "content": prepared_content}
                 )
@@ -615,12 +635,12 @@ class AzureOpenAIProvider(AIProvider):
             # Call Azure OpenAI exactly like your example
             response = self.sync_client.chat.completions.create(
                 model=deployment_name,
-                messages=prepared_messages,
+                messages=cast(Any, prepared_messages),
                 temperature=temperature,
                 max_tokens=max_tokens,
                 **kwargs,
             )
-            return response.choices[0].message.content
+            return response.choices[0].message.content or ""
         except Exception as e:
             raise e
 
@@ -639,12 +659,12 @@ class AzureOpenAIProvider(AIProvider):
             print(deployment_name)
             response = await self.async_client.chat.completions.create(
                 model=deployment_name,
-                messages=prepared_messages,
+                messages=cast(Any, prepared_messages),
                 temperature=temperature,
                 max_tokens=max_tokens,
                 **kwargs,
             )
-            return response.choices[0].message.content
+            return response.choices[0].message.content or ""
         except Exception as e:
             raise e
 
@@ -680,16 +700,16 @@ class AzureOpenAIProvider(AIProvider):
                 prepared_content: List[Dict[str, Any]] = []
                 for item in content:
                     if isinstance(item, dict) and item.get("type") == "text":
-                        prepared_content.append(item)
+                        prepared_content.append(dict(item))
                     elif isinstance(item, dict) and item.get("type") == "image_url":
                         # Process image for Azure (if vision models are deployed)
-                        image_url = item["image_url"]["url"]
+                        image_url: str = item["image_url"]["url"]
                         if image_url.startswith("data:"):
                             # Already base64 encoded
-                            prepared_content.append(item)
+                            prepared_content.append(dict(item))
                         elif image_url.startswith(("http://", "https://")):
                             # URL - Azure can handle these directly
-                            prepared_content.append(item)
+                            prepared_content.append(dict(item))
                         else:
                             # Local file - need to encode
                             with open(image_url, "rb") as img_file:
@@ -708,13 +728,13 @@ class AzureOpenAIProvider(AIProvider):
                             )
                     elif isinstance(item, dict) and item.get("type") == "input_url":
                         # Handle PDF files for Azure OpenAI
-                        pdf_url = item["input_url"]["url"]
+                        pdf_url: str = item["input_url"]["url"]
                         if pdf_url.startswith("data:"):
                             # Already base64 encoded
-                            prepared_content.append(item)
+                            prepared_content.append(dict(item))
                         elif pdf_url.startswith(("http://", "https://")):
                             # URL - Azure can handle these directly
-                            prepared_content.append(item)
+                            prepared_content.append(dict(item))
                         else:
                             # Local file - need to encode
                             with open(pdf_url, "rb") as pdf_file:
@@ -730,7 +750,9 @@ class AzureOpenAIProvider(AIProvider):
                                 }
                             )
                     else:
-                        prepared_content.append(item)
+                        prepared_content.append(
+                            dict(item) if isinstance(item, dict) else {"content": item}
+                        )
                 prepared_messages.append(
                     {"role": message["role"], "content": prepared_content}
                 )
@@ -810,7 +832,10 @@ class AnthropicProvider(AIProvider):
 
         for message in messages:
             if message["role"] == "system":
-                system_msg = {"type": "text", "text": message["content"]}
+                system_msg: Dict[str, Any] = {
+                    "type": "text",
+                    "text": message["content"],
+                }
                 # Add cache_control if present
                 if "cache_control" in message:
                     system_msg["cache_control"] = message["cache_control"]
@@ -821,7 +846,7 @@ class AnthropicProvider(AIProvider):
                         {"role": message["role"], "content": message["content"]}
                     )
                 elif isinstance(message["content"], list):
-                    prepared_content = []
+                    prepared_content: List[Dict[str, Any]] = []
                     for item in message["content"]:
                         if isinstance(item, dict):
                             if item.get("type") == "text":
@@ -830,7 +855,7 @@ class AnthropicProvider(AIProvider):
                                 )
                             elif item.get("type") == "image_url":
                                 # Handle both local files and URLs
-                                image_url = item["image_url"]["url"]
+                                image_url: str = item["image_url"]["url"]
                                 if image_url.startswith(("http://", "https://")):
                                     prepared_content.append(
                                         {
@@ -1083,7 +1108,7 @@ class AnthropicProvider(AIProvider):
                         kwargs.pop(param)
 
             # Create API call parameters
-            api_params = {
+            api_params: Dict[str, Any] = {
                 "model": model.split("/")[-1],
                 "max_tokens": max_tokens,
                 "temperature": temperature,
@@ -1100,12 +1125,12 @@ class AnthropicProvider(AIProvider):
                 api_params["temperature"] = 1
                 api_params["thinking"] = thinking
 
-            response = self.sync_client.messages.create(**api_params)
+            response = self.sync_client.messages.create(**api_params)  # type: ignore[arg-type]
 
             # Handle thinking content if present
             if hasattr(response, "content") and len(response.content) > 1:
                 # Check if any content block is of type "thinking" or "redacted_thinking"
-                thinking_blocks = [
+                thinking_blocks: List[Any] = [
                     block
                     for block in response.content
                     if getattr(block, "type", None) in ["thinking", "redacted_thinking"]
@@ -1113,16 +1138,16 @@ class AnthropicProvider(AIProvider):
                 if thinking_blocks:
                     # You can log or process thinking blocks separately if needed
                     # For now, we'll just return the final text response
-                    text_blocks = [
+                    text_blocks: List[Any] = [
                         block
                         for block in response.content
                         if getattr(block, "type", None) == "text"
                     ]
                     if text_blocks:
-                        return text_blocks[0].text
+                        return str(text_blocks[0].text)
 
             # Default return for normal responses
-            return response.content[0].text
+            return str(response.content[0].text)
         except Exception as e:
             raise e
 
@@ -1171,7 +1196,7 @@ class AnthropicProvider(AIProvider):
                         kwargs.pop(param)
 
             # Create API call parameters
-            api_params = {
+            api_params: Dict[str, Any] = {
                 "model": model.split("/")[-1],
                 "max_tokens": max_tokens,
                 "temperature": temperature,
@@ -1188,12 +1213,12 @@ class AnthropicProvider(AIProvider):
                 api_params["temperature"] = 1
                 api_params["thinking"] = thinking
 
-            response = await self.async_client.messages.create(**api_params)
+            response = await self.async_client.messages.create(**api_params)  # type: ignore[arg-type]
 
             # Handle thinking content if present
             if hasattr(response, "content") and len(response.content) > 1:
                 # Check if any content block is of type "thinking" or "redacted_thinking"
-                thinking_blocks = [
+                thinking_blocks: List[Any] = [
                     block
                     for block in response.content
                     if getattr(block, "type", None) in ["thinking", "redacted_thinking"]
@@ -1201,16 +1226,16 @@ class AnthropicProvider(AIProvider):
                 if thinking_blocks:
                     # You can log or process thinking blocks separately if needed
                     # For now, we'll just return the final text response
-                    text_blocks = [
+                    text_blocks: List[Any] = [
                         block
                         for block in response.content
                         if getattr(block, "type", None) == "text"
                     ]
                     if text_blocks:
-                        return text_blocks[0].text
+                        return str(text_blocks[0].text)
 
             # Default return for normal responses
-            return response.content[0].text
+            return str(response.content[0].text)
         except Exception as e:
             raise e
 
@@ -1240,7 +1265,7 @@ class VertexAIProvider(AIProvider):
     def __init__(
         self, project_id: Optional[str] = None, location: Optional[str] = None
     ) -> None:
-        if not VERTEX_AVAILABLE:
+        if not VERTEX_AVAILABLE or AnthropicVertex is None:
             raise ImportError(
                 "anthropic[vertex] is required for VertexAIProvider. Install with: pip install 'anthropic[vertex]'"
             )
@@ -1252,10 +1277,10 @@ class VertexAIProvider(AIProvider):
             raise ValueError("VERTEX_PROJECT_ID environment variable is required")
 
         try:
-            self.sync_client = AnthropicVertex(
+            self.sync_client: Any = AnthropicVertex(
                 project_id=self.project_id, region=self.location
             )
-            self.async_client = AnthropicVertex(
+            self.async_client: Any = AnthropicVertex(
                 project_id=self.project_id, region=self.location
             )
         except Exception as e:
@@ -1293,7 +1318,7 @@ class VertexAIProvider(AIProvider):
                                 )
                             elif item.get("type") == "image_url":
                                 # Handle both local files and URLs
-                                image_url = item["image_url"]["url"]
+                                image_url: str = item["image_url"]["url"]
                                 if image_url.startswith(("http://", "https://")):
                                     prepared_content.append(
                                         {
@@ -1477,7 +1502,7 @@ class VertexAIProvider(AIProvider):
             system_content, user_messages = self._prepare_messages(messages)
 
             # Create API call parameters
-            api_params = {
+            api_params: Dict[str, Any] = {
                 "model": model.split("/")[-1],  # Remove vertex/ prefix
                 "max_tokens": max_tokens,
                 "temperature": temperature,
@@ -1489,7 +1514,7 @@ class VertexAIProvider(AIProvider):
             }
 
             response = self.sync_client.messages.create(**api_params)
-            return response.content[0].text
+            return str(response.content[0].text)
         except Exception as e:
             raise e
 
@@ -1505,7 +1530,7 @@ class VertexAIProvider(AIProvider):
             system_content, user_messages = self._prepare_messages(messages)
 
             # Create API call parameters
-            api_params = {
+            api_params: Dict[str, Any] = {
                 "model": model.split("/")[-1],  # Remove vertex/ prefix
                 "max_tokens": max_tokens,
                 "temperature": temperature,
@@ -1517,7 +1542,7 @@ class VertexAIProvider(AIProvider):
             }
 
             response = await self.async_client.messages.create(**api_params)
-            return response.content[0].text
+            return str(response.content[0].text)
         except Exception as e:
             raise e
 
@@ -1685,12 +1710,13 @@ class GeminiProvider(AIProvider):
             # Get models from API
             api_models: List[str] = []
             for m in self.client.models.list():
+                supported_actions = getattr(m, "supported_actions", None)
                 if (
-                    hasattr(m, "supported_actions")
-                    and "generateContent" in m.supported_actions
+                    supported_actions is not None
+                    and "generateContent" in supported_actions
                 ):
                     # Handle both old and new naming conventions
-                    model_name = m.name
+                    model_name: str = m.name or ""
 
                     # Remove "models/" prefix if present
                     if model_name.startswith("models/"):
@@ -1741,6 +1767,7 @@ class GeminiProvider(AIProvider):
             user_messages = [msg for msg in messages if msg["role"] != "system"]
 
             # Convert messages to content
+            contents: Union[str, List[Any]]
             if not user_messages:
                 contents = "Follow the system instructions."
             elif len(user_messages) == 1 and isinstance(
@@ -1749,18 +1776,21 @@ class GeminiProvider(AIProvider):
                 contents = user_messages[0]["content"]
             else:
                 # Handle multiple messages or messages with images and videos
-                contents = []
+                contents_list: List[Any] = []
                 for message in user_messages:
                     if isinstance(message["content"], str):
-                        contents.append(message["content"])
+                        contents_list.append(message["content"])
                     elif isinstance(message["content"], list):
-                        text_parts = []
-                        media_parts = []
+                        text_parts: List[str] = []
+                        media_parts: List[Any] = []
                         for item in message["content"]:
-                            if item.get("type") == "text":
-                                text_parts.append(item["text"])
-                            elif item.get("type") == "image_url":
-                                image_path = item["image_url"]["url"]
+                            if isinstance(item, dict) and item.get("type") == "text":
+                                text_parts.append(str(item["text"]))
+                            elif (
+                                isinstance(item, dict)
+                                and item.get("type") == "image_url"
+                            ):
+                                image_path: str = item["image_url"]["url"]
                                 with open(image_path, "rb") as f:
                                     image_data = f.read()
                                 media_parts.append(
@@ -1768,9 +1798,12 @@ class GeminiProvider(AIProvider):
                                         data=image_data, mime_type="image/jpeg"
                                     )
                                 )
-                            elif item.get("type") == "video_url":
+                            elif (
+                                isinstance(item, dict)
+                                and item.get("type") == "video_url"
+                            ):
                                 # Support video processing
-                                video_path = item["video_url"]["url"]
+                                video_path: str = item["video_url"]["url"]
                                 video_file = self.process_video(video_path)
                                 media_parts.append(video_file)
 
@@ -1779,16 +1812,17 @@ class GeminiProvider(AIProvider):
                             text_parts.append("Consider this media in your response.")
 
                         # Combine text parts into a single string
-                        contents.append(" ".join(text_parts))
+                        contents_list.append(" ".join(text_parts))
                         # Add media parts after text
-                        contents.extend(media_parts)
+                        contents_list.extend(media_parts)
+                contents = contents_list
 
             # Extract thinking configuration from kwargs
             thinking_config = kwargs.pop("thinking_config", None)
             thinking_budget = kwargs.pop("thinking_budget", None)
 
             # Handle thinking configuration
-            config_kwargs = {}
+            config_kwargs: Dict[str, Any] = {}
             if thinking_config:
                 config_kwargs["thinking_config"] = thinking_config
             elif thinking_budget:
@@ -1805,22 +1839,24 @@ class GeminiProvider(AIProvider):
                     system_instruction=system_instruction,
                     safety_settings=[
                         types.SafetySetting(
-                            category="HARM_CATEGORY_HATE_SPEECH", threshold="BLOCK_NONE"
+                            category=types.HarmCategory.HARM_CATEGORY_HATE_SPEECH,
+                            threshold=types.HarmBlockThreshold.BLOCK_NONE,
                         ),
                         types.SafetySetting(
-                            category="HARM_CATEGORY_CIVIC_INTEGRITY",
-                            threshold="BLOCK_NONE",
+                            category=types.HarmCategory.HARM_CATEGORY_CIVIC_INTEGRITY,
+                            threshold=types.HarmBlockThreshold.BLOCK_NONE,
                         ),
                         types.SafetySetting(
-                            category="HARM_CATEGORY_HARASSMENT", threshold="BLOCK_NONE"
+                            category=types.HarmCategory.HARM_CATEGORY_HARASSMENT,
+                            threshold=types.HarmBlockThreshold.BLOCK_NONE,
                         ),
                         types.SafetySetting(
-                            category="HARM_CATEGORY_SEXUALLY_EXPLICIT",
-                            threshold="BLOCK_NONE",
+                            category=types.HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT,
+                            threshold=types.HarmBlockThreshold.BLOCK_NONE,
                         ),
                         types.SafetySetting(
-                            category="HARM_CATEGORY_DANGEROUS_CONTENT",
-                            threshold="BLOCK_NONE",
+                            category=types.HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT,
+                            threshold=types.HarmBlockThreshold.BLOCK_NONE,
                         ),
                     ],
                     **config_kwargs,
@@ -1869,6 +1905,7 @@ class GeminiProvider(AIProvider):
             # Get the user messages
             user_messages = [msg for msg in messages if msg["role"] != "system"]
 
+            contents: Union[str, List[Any]]
             if not user_messages:
                 contents = "Follow the system instructions."
             elif len(user_messages) == 1 and isinstance(
@@ -1877,18 +1914,21 @@ class GeminiProvider(AIProvider):
                 contents = user_messages[0]["content"]
             else:
                 # Handle multiple messages or messages with images and videos
-                contents = []
+                contents_list: List[Any] = []
                 for message in user_messages:
                     if isinstance(message["content"], str):
-                        contents.append(message["content"])
+                        contents_list.append(message["content"])
                     elif isinstance(message["content"], list):
-                        text_parts = []
-                        media_parts = []
+                        text_parts: List[str] = []
+                        media_parts: List[Any] = []
                         for item in message["content"]:
-                            if item.get("type") == "text":
-                                text_parts.append(item["text"])
-                            elif item.get("type") == "image_url":
-                                image_path = item["image_url"]["url"]
+                            if isinstance(item, dict) and item.get("type") == "text":
+                                text_parts.append(str(item["text"]))
+                            elif (
+                                isinstance(item, dict)
+                                and item.get("type") == "image_url"
+                            ):
+                                image_path: str = item["image_url"]["url"]
                                 with open(image_path, "rb") as f:
                                     image_data = f.read()
                                 media_parts.append(
@@ -1896,9 +1936,12 @@ class GeminiProvider(AIProvider):
                                         data=image_data, mime_type="image/jpeg"
                                     )
                                 )
-                            elif item.get("type") == "video_url":
+                            elif (
+                                isinstance(item, dict)
+                                and item.get("type") == "video_url"
+                            ):
                                 # Support video processing
-                                video_path = item["video_url"]["url"]
+                                video_path: str = item["video_url"]["url"]
                                 video_file = self.process_video(video_path)
                                 media_parts.append(video_file)
 
@@ -1907,16 +1950,17 @@ class GeminiProvider(AIProvider):
                             text_parts.append("Consider this media in your response.")
 
                         # Combine text parts into a single string
-                        contents.append(" ".join(text_parts))
+                        contents_list.append(" ".join(text_parts))
                         # Add media parts after text
-                        contents.extend(media_parts)
+                        contents_list.extend(media_parts)
+                contents = contents_list
 
             # Extract thinking configuration from kwargs
             thinking_config = kwargs.pop("thinking_config", None)
             thinking_budget = kwargs.pop("thinking_budget", None)
 
             # Handle thinking configuration
-            config_kwargs = {}
+            config_kwargs: Dict[str, Any] = {}
             if thinking_config:
                 config_kwargs["thinking_config"] = thinking_config
             elif thinking_budget:
@@ -1933,22 +1977,24 @@ class GeminiProvider(AIProvider):
                     system_instruction=system_instruction,
                     safety_settings=[
                         types.SafetySetting(
-                            category="HARM_CATEGORY_HATE_SPEECH", threshold="BLOCK_NONE"
+                            category=types.HarmCategory.HARM_CATEGORY_HATE_SPEECH,
+                            threshold=types.HarmBlockThreshold.BLOCK_NONE,
                         ),
                         types.SafetySetting(
-                            category="HARM_CATEGORY_HARASSMENT", threshold="BLOCK_NONE"
+                            category=types.HarmCategory.HARM_CATEGORY_HARASSMENT,
+                            threshold=types.HarmBlockThreshold.BLOCK_NONE,
                         ),
                         types.SafetySetting(
-                            category="HARM_CATEGORY_SEXUALLY_EXPLICIT",
-                            threshold="BLOCK_NONE",
+                            category=types.HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT,
+                            threshold=types.HarmBlockThreshold.BLOCK_NONE,
                         ),
                         types.SafetySetting(
-                            category="HARM_CATEGORY_CIVIC_INTEGRITY",
-                            threshold="BLOCK_NONE",
+                            category=types.HarmCategory.HARM_CATEGORY_CIVIC_INTEGRITY,
+                            threshold=types.HarmBlockThreshold.BLOCK_NONE,
                         ),
                         types.SafetySetting(
-                            category="HARM_CATEGORY_DANGEROUS_CONTENT",
-                            threshold="BLOCK_NONE",
+                            category=types.HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT,
+                            threshold=types.HarmBlockThreshold.BLOCK_NONE,
                         ),
                     ],
                     **config_kwargs,
@@ -1984,12 +2030,17 @@ class GeminiProvider(AIProvider):
         video_file = self.client.files.upload(file=video_path)
 
         # Wait until the uploaded video is available
-        while video_file.state.name == "PROCESSING":
+        while (
+            video_file.state and getattr(video_file.state, "name", None) == "PROCESSING"
+        ):
             time.sleep(2)
-            video_file = self.client.files.get(name=video_file.name)
+            if video_file.name:
+                video_file = self.client.files.get(name=video_file.name)
 
-        if video_file.state.name == "FAILED":
-            raise ValueError(f"Video processing failed: {video_file.state.name}")
+        if video_file.state and getattr(video_file.state, "name", None) == "FAILED":
+            raise ValueError(
+                f"Video processing failed: {getattr(video_file.state, 'name', 'UNKNOWN')}"
+            )
 
         return video_file
 
@@ -2015,6 +2066,7 @@ class GeminiProvider(AIProvider):
             user_messages = [msg for msg in messages if msg["role"] != "system"]
 
             # Convert messages to content
+            contents: Union[str, List[Any]]
             if not user_messages:
                 contents = "Follow the system instructions."
             elif len(user_messages) == 1 and isinstance(
@@ -2023,18 +2075,21 @@ class GeminiProvider(AIProvider):
                 contents = [user_messages[0]["content"]]
             else:
                 # Handle multiple messages or messages with images and videos
-                contents = []
+                contents_list: List[Any] = []
                 for message in user_messages:
                     if isinstance(message["content"], str):
-                        contents.append(message["content"])
+                        contents_list.append(message["content"])
                     elif isinstance(message["content"], list):
-                        text_parts = []
-                        media_parts = []
+                        text_parts: List[str] = []
+                        media_parts: List[Any] = []
                         for item in message["content"]:
-                            if item.get("type") == "text":
-                                text_parts.append(item["text"])
-                            elif item.get("type") == "image_url":
-                                image_path = item["image_url"]["url"]
+                            if isinstance(item, dict) and item.get("type") == "text":
+                                text_parts.append(str(item["text"]))
+                            elif (
+                                isinstance(item, dict)
+                                and item.get("type") == "image_url"
+                            ):
+                                image_path: str = item["image_url"]["url"]
                                 with open(image_path, "rb") as f:
                                     image_data = f.read()
                                 media_parts.append(
@@ -2042,9 +2097,12 @@ class GeminiProvider(AIProvider):
                                         data=image_data, mime_type="image/jpeg"
                                     )
                                 )
-                            elif item.get("type") == "video_url":
+                            elif (
+                                isinstance(item, dict)
+                                and item.get("type") == "video_url"
+                            ):
                                 # Support video processing
-                                video_path = item["video_url"]["url"]
+                                video_path: str = item["video_url"]["url"]
                                 video_file = self.process_video(video_path)
                                 media_parts.append(video_file)
 
@@ -2053,9 +2111,10 @@ class GeminiProvider(AIProvider):
                             text_parts.append("Consider this media in your response.")
 
                         # Combine text parts into a single string
-                        contents.append(" ".join(text_parts))
+                        contents_list.append(" ".join(text_parts))
                         # Add media parts after text
-                        contents.extend(media_parts)
+                        contents_list.extend(media_parts)
+                contents = contents_list
 
             # Configure response modalities to include both text and image
             config = types.GenerateContentConfig(
@@ -2065,22 +2124,24 @@ class GeminiProvider(AIProvider):
                 response_modalities=["Text", "Image"],
                 safety_settings=[
                     types.SafetySetting(
-                        category="HARM_CATEGORY_HATE_SPEECH", threshold="BLOCK_NONE"
+                        category=types.HarmCategory.HARM_CATEGORY_HATE_SPEECH,
+                        threshold=types.HarmBlockThreshold.BLOCK_NONE,
                     ),
                     types.SafetySetting(
-                        category="HARM_CATEGORY_CIVIC_INTEGRITY",
-                        threshold="BLOCK_NONE",
+                        category=types.HarmCategory.HARM_CATEGORY_CIVIC_INTEGRITY,
+                        threshold=types.HarmBlockThreshold.BLOCK_NONE,
                     ),
                     types.SafetySetting(
-                        category="HARM_CATEGORY_HARASSMENT", threshold="BLOCK_NONE"
+                        category=types.HarmCategory.HARM_CATEGORY_HARASSMENT,
+                        threshold=types.HarmBlockThreshold.BLOCK_NONE,
                     ),
                     types.SafetySetting(
-                        category="HARM_CATEGORY_SEXUALLY_EXPLICIT",
-                        threshold="BLOCK_NONE",
+                        category=types.HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT,
+                        threshold=types.HarmBlockThreshold.BLOCK_NONE,
                     ),
                     types.SafetySetting(
-                        category="HARM_CATEGORY_DANGEROUS_CONTENT",
-                        threshold="BLOCK_NONE",
+                        category=types.HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT,
+                        threshold=types.HarmBlockThreshold.BLOCK_NONE,
                     ),
                 ],
             )
@@ -2092,16 +2153,21 @@ class GeminiProvider(AIProvider):
             )
 
             # Process response to extract both text and images
-            result = {"text": "", "images": []}
+            result: Dict[str, Any] = {"text": "", "images": []}
 
-            for candidate in response.candidates:
-                for part in candidate.content.parts:
-                    if part.text is not None:
-                        result["text"] += part.text
-                    elif part.inline_data is not None:
-                        # Convert byte data to PIL Image
-                        image = Image.open(io.BytesIO(part.inline_data.data))
-                        result["images"].append(image)
+            if response.candidates:
+                for candidate in response.candidates:
+                    if candidate.content and candidate.content.parts:
+                        for part in candidate.content.parts:
+                            if part.text is not None:
+                                result["text"] += part.text
+                            elif (
+                                part.inline_data is not None
+                                and part.inline_data.data is not None
+                            ):
+                                # Convert byte data to PIL Image
+                                image = Image.open(io.BytesIO(part.inline_data.data))
+                                result["images"].append(image)
 
             return result
         except Exception as e:
@@ -2164,12 +2230,12 @@ class DeepSeekProvider(AIProvider):
         try:
             response = self.sync_client.chat.completions.create(
                 model=model,
-                messages=messages,
+                messages=cast(Any, messages),
                 temperature=temperature,
                 max_tokens=max_tokens,
                 **kwargs,
             )
-            return response.choices[0].message.content
+            return response.choices[0].message.content or ""
         except Exception as e:
             raise e
 
@@ -2184,12 +2250,12 @@ class DeepSeekProvider(AIProvider):
         try:
             response = await self.async_client.chat.completions.create(
                 model=model,
-                messages=messages,
+                messages=cast(Any, messages),
                 temperature=temperature,
                 max_tokens=max_tokens,
                 **kwargs,
             )
-            return response.choices[0].message.content
+            return response.choices[0].message.content or ""
         except Exception as e:
             raise e
 
@@ -2313,7 +2379,9 @@ class BedrockProvider(AIProvider):
                 kwargs["aws_access_key_id"] = os.getenv("AWS_ACCESS_KEY_ID")
                 kwargs["aws_secret_access_key"] = os.getenv("AWS_SECRET_ACCESS_KEY")
 
-        self.bedrock_runtime = boto3.client("bedrock-runtime", **kwargs)
+        self.bedrock_runtime: Any = (
+            boto3.client("bedrock-runtime", **kwargs) if boto3 else None
+        )  # type: ignore[union-attr]
         self.region_name: str = region_name
 
     def _extract_model_from_arn(self, arn: str) -> str:
@@ -2381,9 +2449,9 @@ class BedrockProvider(AIProvider):
             if message["role"] == "system":
                 # For Bedrock, system should be a simple string, not an array
                 if system_content:
-                    system_content += "\n" + message["content"]
+                    system_content += "\n" + str(message["content"])
                 else:
-                    system_content = message["content"]
+                    system_content = str(message["content"])
             else:
                 if isinstance(message["content"], str):
                     user_messages.append(
@@ -2393,16 +2461,16 @@ class BedrockProvider(AIProvider):
                         }
                     )
                 elif isinstance(message["content"], list):
-                    prepared_content = []
+                    prepared_content: List[Dict[str, Any]] = []
                     for item in message["content"]:
                         if isinstance(item, dict):
                             if item.get("type") == "text":
                                 prepared_content.append(
-                                    {"type": "text", "text": item["text"]}
+                                    {"type": "text", "text": str(item["text"])}
                                 )
                             elif item.get("type") == "image_url":
                                 # Handle image for Bedrock
-                                image_url = item["image_url"]["url"]
+                                image_url: str = str(item["image_url"]["url"])
                                 if image_url.startswith(("http://", "https://")):
                                     # Download image for processing
                                     response = requests.get(image_url)
@@ -2431,7 +2499,7 @@ class BedrockProvider(AIProvider):
                         {"role": message["role"], "content": prepared_content}
                     )
 
-        request_body = {
+        request_body: Dict[str, Any] = {
             "anthropic_version": "bedrock-2023-05-31",
             "max_tokens": max_tokens,
             "temperature": temperature,
@@ -2461,11 +2529,13 @@ class BedrockProvider(AIProvider):
         prompt = ""
         for message in messages:
             role = message["role"].capitalize()
-            content = message["content"]
+            content: Any = message["content"]
             if isinstance(content, list):
                 # Extract text from content list
-                text_parts = [
-                    item["text"] for item in content if item.get("type") == "text"
+                text_parts: List[str] = [
+                    str(item["text"])
+                    for item in content
+                    if isinstance(item, dict) and item.get("type") == "text"
                 ]
                 content = " ".join(text_parts)
             prompt += f"{role}: {content}\n"
@@ -2493,10 +2563,12 @@ class BedrockProvider(AIProvider):
         prompt = ""
         for message in messages:
             role = message["role"]
-            content = message["content"]
+            content: Any = message["content"]
             if isinstance(content, list):
-                text_parts = [
-                    item["text"] for item in content if item.get("type") == "text"
+                text_parts: List[str] = [
+                    str(item["text"])
+                    for item in content
+                    if isinstance(item, dict) and item.get("type") == "text"
                 ]
                 content = " ".join(text_parts)
 
@@ -2532,20 +2604,22 @@ class BedrockProvider(AIProvider):
         chat_history: List[Dict[str, str]] = []
 
         for i, message in enumerate(messages):
-            content = message["content"]
+            content: Any = message["content"]
             if isinstance(content, list):
-                text_parts = [
-                    item["text"] for item in content if item.get("type") == "text"
+                text_parts: List[str] = [
+                    str(item["text"])
+                    for item in content
+                    if isinstance(item, dict) and item.get("type") == "text"
                 ]
                 content = " ".join(text_parts)
 
             if message["role"] == "user" and i == len(messages) - 1:
-                prompt = content
+                prompt = str(content)
             elif message["role"] in ["user", "assistant"]:
                 chat_history.append(
                     {
                         "role": "USER" if message["role"] == "user" else "CHATBOT",
-                        "message": content,
+                        "message": str(content),
                     }
                 )
 
@@ -2571,10 +2645,12 @@ class BedrockProvider(AIProvider):
         prompt = ""
         for message in messages:
             role = message["role"].capitalize()
-            content = message["content"]
+            content: Any = message["content"]
             if isinstance(content, list):
-                text_parts = [
-                    item["text"] for item in content if item.get("type") == "text"
+                text_parts: List[str] = [
+                    str(item["text"])
+                    for item in content
+                    if isinstance(item, dict) and item.get("type") == "text"
                 ]
                 content = " ".join(text_parts)
             prompt += f"{role}: {content}\n"
@@ -2625,7 +2701,7 @@ class BedrockProvider(AIProvider):
                 )
 
             # Make the API call
-            response = self.bedrock_runtime.invoke_model(
+            response: Any = self.bedrock_runtime.invoke_model(
                 modelId=model_id,
                 body=json.dumps(request_body),
                 contentType="application/json",
@@ -2633,30 +2709,28 @@ class BedrockProvider(AIProvider):
             )
 
             # Parse response based on model family
-            response_body = json.loads(response["body"].read())
+            response_body: Dict[str, Any] = json.loads(response["body"].read())
 
             if model_family == "anthropic":
-                return response_body["content"][0]["text"]
+                return str(response_body["content"][0]["text"])
             elif model_family in ["nova", "titan"]:
-                return response_body["results"][0]["outputText"]
+                return str(response_body["results"][0]["outputText"])
             elif model_family == "llama":
-                return response_body["generation"]
+                return str(response_body["generation"])
             elif model_family == "cohere":
-                return response_body["text"]
+                return str(response_body["text"])
             else:
                 # Try common response formats
                 if "text" in response_body:
-                    return response_body["text"]
+                    return str(response_body["text"])
                 elif "content" in response_body:
-                    return response_body["content"]
+                    return str(response_body["content"])
                 elif "generation" in response_body:
-                    return response_body["generation"]
+                    return str(response_body["generation"])
                 else:
                     return str(response_body)
 
-        except (ClientError, BotoCoreError) as e:
-            raise e
-        except Exception as e:
+        except (ClientError, BotoCoreError) as e:  # type: ignore[misc]
             raise e
 
     async def call_ai_async(
@@ -2898,7 +2972,14 @@ class AIManager:
     stop=stop_after_attempt(3),
     reraise=True,
 )
-def call_ai_with_retry(ai_manager, messages, temperature, max_tokens, model, **kwargs):
+def call_ai_with_retry(
+    ai_manager: AIManager,
+    messages: List[Dict[str, Any]],
+    temperature: float,
+    max_tokens: int,
+    model: str,
+    **kwargs: Any,
+) -> Tuple[str, float]:
     response, cost = ai_manager.call_ai(
         messages, temperature, max_tokens, model=model, **kwargs
     )
@@ -2931,8 +3012,13 @@ def call_ai_with_retry(ai_manager, messages, temperature, max_tokens, model, **k
     reraise=True,
 )
 async def call_ai_async_with_retry(
-    ai_manager, messages, temperature, max_tokens, model, **kwargs
-):
+    ai_manager: AIManager,
+    messages: List[Dict[str, Any]],
+    temperature: float,
+    max_tokens: int,
+    model: str,
+    **kwargs: Any,
+) -> Tuple[str, float]:
     response, cost = await ai_manager.call_ai_async(
         messages, temperature, max_tokens, model=model, **kwargs
     )
@@ -2965,7 +3051,14 @@ async def call_ai_async_with_retry(
     stop=stop_after_attempt(3),
     reraise=True,
 )
-def generate_with_retry(ai_manager, messages, temperature, max_tokens, model, **kwargs):
+def generate_with_retry(
+    ai_manager: AIManager,
+    messages: List[Dict[str, Any]],
+    temperature: float,
+    max_tokens: int,
+    model: str,
+    **kwargs: Any,
+) -> Tuple[Any, float]:
     response, cost = ai_manager.generate(
         messages, temperature, max_tokens, model=model, **kwargs
     )
@@ -2998,8 +3091,13 @@ def generate_with_retry(ai_manager, messages, temperature, max_tokens, model, **
     reraise=True,
 )
 async def generate_async_with_retry(
-    ai_manager, messages, temperature, max_tokens, model, **kwargs
-):
+    ai_manager: AIManager,
+    messages: List[Dict[str, Any]],
+    temperature: float,
+    max_tokens: int,
+    model: str,
+    **kwargs: Any,
+) -> Tuple[Any, float]:
     response, cost = await ai_manager.generate_async(
         messages, temperature, max_tokens, model=model, **kwargs
     )
@@ -3106,7 +3204,12 @@ def call_ai(
 ) -> Tuple[str, float]:
     ai_manager = AIManagerSingleton.get_instance()
     return call_ai_with_retry(
-        ai_manager, messages, temperature, max_tokens, model, **kwargs
+        ai_manager,
+        cast(List[Dict[str, Any]], messages),
+        temperature,
+        max_tokens,
+        model,
+        **kwargs,
     )
 
 
@@ -3119,7 +3222,12 @@ async def call_ai_async(
 ) -> Tuple[str, float]:
     ai_manager = AIManagerSingleton.get_instance()
     return await call_ai_async_with_retry(
-        ai_manager, messages, temperature, max_tokens, model, **kwargs
+        ai_manager,
+        cast(List[Dict[str, Any]], messages),
+        temperature,
+        max_tokens,
+        model,
+        **kwargs,
     )
 
 
@@ -3129,10 +3237,15 @@ def generate(
     temperature: float = 0.1,
     max_tokens: int = 4096,
     **kwargs: Any,
-) -> Tuple[str, float]:
+) -> Tuple[Any, float]:
     ai_manager = AIManagerSingleton.get_instance()
     return generate_with_retry(
-        ai_manager, messages, temperature, max_tokens, model, **kwargs
+        ai_manager,
+        cast(List[Dict[str, Any]], messages),
+        temperature,
+        max_tokens,
+        model,
+        **kwargs,
     )
 
 
@@ -3142,8 +3255,13 @@ async def generate_async(
     temperature: float = 0.1,
     max_tokens: int = 4096,
     **kwargs: Any,
-) -> Tuple[str, float]:
+) -> Tuple[Any, float]:
     ai_manager = AIManagerSingleton.get_instance()
     return await generate_async_with_retry(
-        ai_manager, messages, temperature, max_tokens, model, **kwargs
+        ai_manager,
+        cast(List[Dict[str, Any]], messages),
+        temperature,
+        max_tokens,
+        model,
+        **kwargs,
     )
