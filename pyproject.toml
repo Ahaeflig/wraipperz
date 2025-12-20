@@ -55,8 +55,10 @@ packages = ["src/wraipperz"]
 [dependency-groups]
 dev = [
     "build>=1.2.2.post1",
+    "mypy>=1.19.1",
     "pre-commit>=4.1.0",
     "pytest>=8.3.5",
     "ruff>=0.11.0",
     "twine>=6.1.0",
+    "types-pyyaml>=6.0.12.20250915",
 ]

@@ -9,7 +9,7 @@ import time
 
 # from tokencost import calculate_prompt_cost, calculate_completion_cost
 from pathlib import Path
-from typing import Any, Dict, List, Tuple
+from typing import Any, ClassVar, Dict, List, Optional, Tuple, Union
 
 import anthropic
 import requests
@@ -65,44 +65,44 @@ class AIProvider(abc.ABC):
     @abc.abstractmethod
     def call_ai(
         self,
-        messages: List[Message],
+        messages: List[Dict[str, Any]],
         temperature: float,
         max_tokens: int,
         model: str,
-        **kwargs: Dict[str, Any],
+        **kwargs: Any,
     ) -> str:
         pass
 
     @abc.abstractmethod
     async def call_ai_async(
         self,
-        messages: List[Message],
+        messages: List[Dict[str, Any]],
         temperature: float,
         max_tokens: int,
         model: str,
-        **kwargs: Dict[str, Any],
+        **kwargs: Any,
     ) -> str:
         pass
 
     @abc.abstractmethod
     def generate(
         self,
-        messages: List[Message],
+        messages: List[Dict[str, Any]],
         temperature: float,
         max_tokens: int,
         model: str,
-        **kwargs: Dict[str, Any],
+        **kwargs: Any,
     ) -> str:
         pass
 
     @abc.abstractmethod
     async def generate_async(
         self,
-        messages: List[Message],
+        messages: List[Dict[str, Any]],
         temperature: float,
         max_tokens: int,
         model: str,
-        **kwargs: Dict[str, Any],
+        **kwargs: Any,
     ) -> str:
         pass
 
@@ -110,10 +110,17 @@ class AIProvider(abc.ABC):
 class LMStudioProvider(AIProvider):
     supported_models = ["lmstudio"]
 
-    def __init__(self, ip_address="localhost", port=1234):
-        self.base_url = f"http://{ip_address}:{port}/v1"
+    def __init__(self, ip_address: str = "localhost", port: int = 1234) -> None:
+        self.base_url: str = f"http://{ip_address}:{port}/v1"
 
-    def call_ai(self, messages, temperature, max_tokens, model=None, **kwargs):
+    def call_ai(
+        self,
+        messages: List[Dict[str, Any]],
+        temperature: float,
+        max_tokens: int,
+        model: Optional[str] = None,
+        **kwargs: Any,
+    ) -> str:
         try:
             headers = {"Content-Type": "application/json"}
             data = {
@@ -134,18 +141,35 @@ class LMStudioProvider(AIProvider):
             raise e
 
     async def call_ai_async(
-        self, messages, temperature, max_tokens, model=None, **kwargs
-    ):
+        self,
+        messages: List[Dict[str, Any]],
+        temperature: float,
+        max_tokens: int,
+        model: Optional[str] = None,
+        **kwargs: Any,
+    ) -> str:
         # For simplicity, we'll use the synchronous version in an async context
         # In a real-world scenario, you might want to use an async HTTP client
         return self.call_ai(messages, temperature, max_tokens, model, **kwargs)
 
-    def generate(self, messages, temperature, max_tokens, model=None, **kwargs):
+    def generate(
+        self,
+        messages: List[Dict[str, Any]],
+        temperature: float,
+        max_tokens: int,
+        model: Optional[str] = None,
+        **kwargs: Any,
+    ) -> str:
         raise NotImplementedError("This provider does not support image generation")
 
     async def generate_async(
-        self, messages, temperature, max_tokens, model=None, **kwargs
-    ):
+        self,
+        messages: List[Dict[str, Any]],
+        temperature: float,
+        max_tokens: int,
+        model: Optional[str] = None,
+        **kwargs: Any,
+    ) -> str:
         raise NotImplementedError("This provider does not support image generation")
 
 
@@ -197,7 +221,7 @@ class OpenAIProvider(AIProvider):
         "openai/o4-mini-2025-04-16",
     ]
 
-    def __init__(self, api_key=None):
+    def __init__(self, api_key: Optional[str] = None) -> None:
         self.sync_client = OpenAI(api_key=api_key or os.getenv("OPENAI_API_KEY"))
         self.async_client = AsyncOpenAI(api_key=api_key or os.getenv("OPENAI_API_KEY"))
 
@@ -249,8 +273,13 @@ class OpenAIProvider(AIProvider):
             # Continue with hardcoded list as fallback
 
     def call_ai(
-        self, messages, temperature, max_tokens, model="openai/gpt-4o", **kwargs
-    ):
+        self,
+        messages: List[Dict[str, Any]],
+        temperature: float,
+        max_tokens: int,
+        model: str = "openai/gpt-4o",
+        **kwargs: Any,
+    ) -> str:
         try:
             # Check if this is a reasoning model and handle accordingly
             if self._is_reasoning_model(model):
@@ -273,8 +302,13 @@ class OpenAIProvider(AIProvider):
             raise e
 
     async def call_ai_async(
-        self, messages, temperature, max_tokens, model="openai/gpt-4o", **kwargs
-    ):
+        self,
+        messages: List[Dict[str, Any]],
+        temperature: float,
+        max_tokens: int,
+        model: str = "openai/gpt-4o",
+        **kwargs: Any,
+    ) -> str:
         try:
             # Check if this is a reasoning model and handle accordingly
             if self._is_reasoning_model(model):
@@ -296,15 +330,27 @@ class OpenAIProvider(AIProvider):
         except Exception as e:
             raise e
 
-    def generate(self, messages, temperature, max_tokens, model=None, **kwargs):
+    def generate(
+        self,
+        messages: List[Dict[str, Any]],
+        temperature: float,
+        max_tokens: int,
+        model: Optional[str] = None,
+        **kwargs: Any,
+    ) -> str:
         raise NotImplementedError("This provider does not support image generation")
 
     async def generate_async(
-        self, messages, temperature, max_tokens, model=None, **kwargs
-    ):
+        self,
+        messages: List[Dict[str, Any]],
+        temperature: float,
+        max_tokens: int,
+        model: Optional[str] = None,
+        **kwargs: Any,
+    ) -> str:
         raise NotImplementedError("This provider does not support image generation")
 
-    def _is_reasoning_model(self, model):
+    def _is_reasoning_model(self, model: str) -> bool:
         """Check if the model is a reasoning model (o1, o3 series)"""
         model_name = model.split("/")[-1].lower()
         reasoning_models = [
@@ -322,8 +368,13 @@ class OpenAIProvider(AIProvider):
         return any(model_name.startswith(rm) for rm in reasoning_models)
 
     def _prepare_reasoning_params(
-        self, messages, temperature, max_tokens, model, **kwargs
-    ):
+        self,
+        messages: List[Dict[str, Any]],
+        temperature: float,
+        max_tokens: int,
+        model: str,
+        **kwargs: Any,
+    ) -> Dict[str, Any]:
         """Prepare parameters for reasoning models with their special requirements"""
         model_name = model.split("/")[-1]
 
@@ -405,7 +456,7 @@ class OpenAIProvider(AIProvider):
 
         return api_params
 
-    def _process_media(self, media_path):
+    def _process_media(self, media_path: Union[str, Path, bytes]) -> str:
         if isinstance(media_path, (str, Path)):
             path = Path(media_path)
             if path.is_file():
@@ -418,7 +469,7 @@ class OpenAIProvider(AIProvider):
         else:
             raise ValueError(f"Unsupported media format: {type(media_path)}")
 
-    def _process_image(self, image_path):
+    def _process_image(self, image_path: Union[str, Path, bytes, Image.Image]) -> str:
         if isinstance(image_path, (str, Path)):
             # Handle both string paths and Path objects
             path = Path(image_path)
@@ -438,8 +489,8 @@ class OpenAIProvider(AIProvider):
         else:
             raise ValueError(f"Unsupported image format: {type(image_path)}")
 
-    def _prepare_messages(self, messages):
-        prepared_messages = []
+    def _prepare_messages(self, messages: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        prepared_messages: List[Dict[str, Any]] = []
         for message in messages:
             content = message["content"]
             if isinstance(content, str):
@@ -510,10 +561,15 @@ class AzureOpenAIProvider(AIProvider):
     - AZURE_OPENAI_DEPLOYMENTS: Comma-separated list of deployment names
     """
 
-    def __init__(self, endpoint=None, api_key=None, api_version=None):
+    def __init__(
+        self,
+        endpoint: Optional[str] = None,
+        api_key: Optional[str] = None,
+        api_version: Optional[str] = None,
+    ) -> None:
         endpoint = endpoint or os.getenv("AZURE_OPENAI_ENDPOINT")
         api_key = api_key or os.getenv("AZURE_OPENAI_API_KEY")
-        self.endpoint = endpoint
+        self.endpoint: Optional[str] = endpoint
 
         if not endpoint:
             raise ValueError("AZURE_OPENAI_ENDPOINT environment variable is required")
@@ -541,7 +597,14 @@ class AzureOpenAIProvider(AIProvider):
                 f"azure/{d.strip()}" for d in deployments.split(",") if d.strip()
             ]
 
-    def call_ai(self, messages, temperature, max_tokens, model, **kwargs):
+    def call_ai(
+        self,
+        messages: List[Dict[str, Any]],
+        temperature: float,
+        max_tokens: int,
+        model: str,
+        **kwargs: Any,
+    ) -> str:
         try:
             # Extract deployment name from model (format: "azure/deployment-name")
             deployment_name = model.split("/", 1)[1] if "/" in model else model
@@ -561,7 +624,14 @@ class AzureOpenAIProvider(AIProvider):
         except Exception as e:
             raise e
 
-    async def call_ai_async(self, messages, temperature, max_tokens, model, **kwargs):
+    async def call_ai_async(
+        self,
+        messages: List[Dict[str, Any]],
+        temperature: float,
+        max_tokens: int,
+        model: str,
+        **kwargs: Any,
+    ) -> str:
         try:
             deployment_name = model.split("/", 1)[1] if "/" in model else model
             prepared_messages = self._prepare_messages(messages)
@@ -578,24 +648,36 @@ class AzureOpenAIProvider(AIProvider):
         except Exception as e:
             raise e
 
-    def generate(self, messages, temperature, max_tokens, model=None, **kwargs):
+    def generate(
+        self,
+        messages: List[Dict[str, Any]],
+        temperature: float,
+        max_tokens: int,
+        model: Optional[str] = None,
+        **kwargs: Any,
+    ) -> str:
         raise NotImplementedError("This provider does not support image generation")
 
     async def generate_async(
-        self, messages, temperature, max_tokens, model=None, **kwargs
-    ):
+        self,
+        messages: List[Dict[str, Any]],
+        temperature: float,
+        max_tokens: int,
+        model: Optional[str] = None,
+        **kwargs: Any,
+    ) -> str:
         raise NotImplementedError("This provider does not support image generation")
 
-    def _prepare_messages(self, messages):
+    def _prepare_messages(self, messages: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
         """Prepare messages for Azure OpenAI API - similar to OpenAI but simpler"""
-        prepared_messages = []
+        prepared_messages: List[Dict[str, Any]] = []
         for message in messages:
             content = message["content"]
             if isinstance(content, str):
                 prepared_messages.append({"role": message["role"], "content": content})
             elif isinstance(content, list):
                 # Azure OpenAI also supports multimodal content
-                prepared_content = []
+                prepared_content: List[Dict[str, Any]] = []
                 for item in content:
                     if isinstance(item, dict) and item.get("type") == "text":
                         prepared_content.append(item)
@@ -699,7 +781,7 @@ class AnthropicProvider(AIProvider):
         "anthropic/claude-opus-4-5-20251101",
     ]
 
-    def __init__(self, api_key=None):
+    def __init__(self, api_key: Optional[str] = None) -> None:
         self.sync_client = anthropic.Anthropic(
             api_key=api_key or os.getenv("ANTHROPIC_API_KEY")
         )
@@ -707,22 +789,24 @@ class AnthropicProvider(AIProvider):
             api_key=api_key or os.getenv("ANTHROPIC_API_KEY")
         )
 
-        self.supported_models = [
+        self.supported_models: List[str] = [
             f"anthropic/{model.id}" for model in self.sync_client.models.list(limit=30)
         ]
 
-    def supports_extended_thinking(self, model):
+    def supports_extended_thinking(self, model: str) -> bool:
         """Check if a model supports extended thinking (reasoning capabilities)"""
         return model in self.extended_thinking_models
 
-    def _is_reasoning_model(self, model):
+    def _is_reasoning_model(self, model: str) -> bool:
         """Check if the model supports extended thinking - alias for backwards compatibility"""
         return self.supports_extended_thinking(model)
 
-    def _prepare_messages(self, messages):
+    def _prepare_messages(
+        self, messages: List[Dict[str, Any]]
+    ) -> Tuple[List[Dict[str, Any]], List[Dict[str, Any]]]:
         """Prepare messages for Claude API, handling both text, images, and caching."""
-        system_content = []
-        user_messages = []
+        system_content: List[Dict[str, Any]] = []
+        user_messages: List[Dict[str, Any]] = []
 
         for message in messages:
             if message["role"] == "system":
@@ -775,7 +859,7 @@ class AnthropicProvider(AIProvider):
 
         return system_content, user_messages
 
-    def _process_image(self, image_path):
+    def _process_image(self, image_path: Union[str, Path, bytes, Image.Image]) -> str:
         MAX_IMAGE_SIZE = 5 * 1024 * 1024  # 5MB in bytes
 
         if isinstance(image_path, (str, Path)):
@@ -927,29 +1011,41 @@ class AnthropicProvider(AIProvider):
         else:
             raise ValueError(f"Unsupported image format: {type(image_path)}")
 
-    def _get_media_type(self, file_path):
+    def _get_media_type(self, file_path: Union[str, Path]) -> str:
         if isinstance(file_path, str) and file_path.startswith(("http://", "https://")):
             response = requests.head(file_path)
             return response.headers.get("content-type", "image/jpeg")
-        mime_type, _ = mimetypes.guess_type(file_path)
+        mime_type, _ = mimetypes.guess_type(str(file_path))
         return mime_type or "image/jpeg"
 
-    def generate(self, messages, temperature, max_tokens, model=None, **kwargs):
+    def generate(
+        self,
+        messages: List[Dict[str, Any]],
+        temperature: float,
+        max_tokens: int,
+        model: Optional[str] = None,
+        **kwargs: Any,
+    ) -> str:
         raise NotImplementedError("This provider does not support image generation")
 
     async def generate_async(
-        self, messages, temperature, max_tokens, model=None, **kwargs
-    ):
+        self,
+        messages: List[Dict[str, Any]],
+        temperature: float,
+        max_tokens: int,
+        model: Optional[str] = None,
+        **kwargs: Any,
+    ) -> str:
         raise NotImplementedError("This provider does not support image generation")
 
     def call_ai(
         self,
-        messages,
-        temperature,
-        max_tokens,
-        model="anthropic/claude-3-5-sonnet-20240620",
-        **kwargs,
-    ):
+        messages: List[Dict[str, Any]],
+        temperature: float,
+        max_tokens: int,
+        model: str = "anthropic/claude-3-5-sonnet-20240620",
+        **kwargs: Any,
+    ) -> str:
         try:
             system_content, user_messages = self._prepare_messages(messages)
 
@@ -1032,12 +1128,12 @@ class AnthropicProvider(AIProvider):
 
     async def call_ai_async(
         self,
-        messages,
-        temperature,
-        max_tokens,
-        model="anthropic/claude-3-5-sonnet-20240620",
-        **kwargs,
-    ):
+        messages: List[Dict[str, Any]],
+        temperature: float,
+        max_tokens: int,
+        model: str = "anthropic/claude-3-5-sonnet-20240620",
+        **kwargs: Any,
+    ) -> str:
         try:
             system_content, user_messages = self._prepare_messages(messages)
 
@@ -1141,14 +1237,16 @@ class VertexAIProvider(AIProvider):
         "vertex/claude-opus-4-5@20251101",
     ]
 
-    def __init__(self, project_id=None, location=None):
+    def __init__(
+        self, project_id: Optional[str] = None, location: Optional[str] = None
+    ) -> None:
         if not VERTEX_AVAILABLE:
             raise ImportError(
                 "anthropic[vertex] is required for VertexAIProvider. Install with: pip install 'anthropic[vertex]'"
             )
 
-        self.project_id = project_id or os.getenv("VERTEX_PROJECT_ID")
-        self.location = location or os.getenv("VERTEX_LOCATION", "us-east5")
+        self.project_id: Optional[str] = project_id or os.getenv("VERTEX_PROJECT_ID")
+        self.location: str = location or os.getenv("VERTEX_LOCATION", "us-east5")
 
         if not self.project_id:
             raise ValueError("VERTEX_PROJECT_ID environment variable is required")
@@ -1163,14 +1261,19 @@ class VertexAIProvider(AIProvider):
         except Exception as e:
             raise ValueError(f"Failed to initialize Vertex AI client: {e}")
 
-    def _prepare_messages(self, messages):
+    def _prepare_messages(
+        self, messages: List[Dict[str, Any]]
+    ) -> Tuple[List[Dict[str, Any]], List[Dict[str, Any]]]:
         """Prepare messages for Vertex AI Claude API, handling both text and images."""
-        system_content = []
-        user_messages = []
+        system_content: List[Dict[str, Any]] = []
+        user_messages: List[Dict[str, Any]] = []
 
         for message in messages:
             if message["role"] == "system":
-                system_msg = {"type": "text", "text": message["content"]}
+                system_msg: Dict[str, Any] = {
+                    "type": "text",
+                    "text": message["content"],
+                }
                 # Add cache_control if present
                 if "cache_control" in message:
                     system_msg["cache_control"] = message["cache_control"]
@@ -1181,7 +1284,7 @@ class VertexAIProvider(AIProvider):
                         {"role": message["role"], "content": message["content"]}
                     )
                 elif isinstance(message["content"], list):
-                    prepared_content = []
+                    prepared_content: List[Dict[str, Any]] = []
                     for item in message["content"]:
                         if isinstance(item, dict):
                             if item.get("type") == "text":
@@ -1219,7 +1322,7 @@ class VertexAIProvider(AIProvider):
 
         return system_content, user_messages
 
-    def _process_image(self, image_path):
+    def _process_image(self, image_path: Union[str, Path, bytes, Image.Image]) -> str:
         """Process image with size constraints for Vertex AI."""
         MAX_IMAGE_SIZE = 5 * 1024 * 1024  # 5MB in bytes
 
@@ -1354,22 +1457,22 @@ class VertexAIProvider(AIProvider):
         else:
             raise ValueError(f"Unsupported image format: {type(image_path)}")
 
-    def _get_media_type(self, file_path):
+    def _get_media_type(self, file_path: Union[str, Path]) -> str:
         """Get media type for image files."""
         if isinstance(file_path, str) and file_path.startswith(("http://", "https://")):
             response = requests.head(file_path)
             return response.headers.get("content-type", "image/jpeg")
-        mime_type, _ = mimetypes.guess_type(file_path)
+        mime_type, _ = mimetypes.guess_type(str(file_path))
         return mime_type or "image/jpeg"
 
     def call_ai(
         self,
-        messages,
-        temperature,
-        max_tokens,
-        model="vertex/claude-sonnet-4@20250514",
-        **kwargs,
-    ):
+        messages: List[Dict[str, Any]],
+        temperature: float,
+        max_tokens: int,
+        model: str = "vertex/claude-sonnet-4@20250514",
+        **kwargs: Any,
+    ) -> str:
         try:
             system_content, user_messages = self._prepare_messages(messages)
 
@@ -1392,12 +1495,12 @@ class VertexAIProvider(AIProvider):
 
     async def call_ai_async(
         self,
-        messages,
-        temperature,
-        max_tokens,
-        model="vertex/claude-sonnet-4@20250514",
-        **kwargs,
-    ):
+        messages: List[Dict[str, Any]],
+        temperature: float,
+        max_tokens: int,
+        model: str = "vertex/claude-sonnet-4@20250514",
+        **kwargs: Any,
+    ) -> str:
         try:
             system_content, user_messages = self._prepare_messages(messages)
 
@@ -1418,12 +1521,24 @@ class VertexAIProvider(AIProvider):
         except Exception as e:
             raise e
 
-    def generate(self, messages, temperature, max_tokens, model=None, **kwargs):
+    def generate(
+        self,
+        messages: List[Dict[str, Any]],
+        temperature: float,
+        max_tokens: int,
+        model: Optional[str] = None,
+        **kwargs: Any,
+    ) -> str:
         raise NotImplementedError("This provider does not support image generation")
 
     async def generate_async(
-        self, messages, temperature, max_tokens, model=None, **kwargs
-    ):
+        self,
+        messages: List[Dict[str, Any]],
+        temperature: float,
+        max_tokens: int,
+        model: Optional[str] = None,
+        **kwargs: Any,
+    ) -> str:
         raise NotImplementedError("This provider does not support image generation")
 
 
@@ -1564,11 +1679,11 @@ class GeminiProvider(AIProvider):
         "genai/gemini-3.0-deep-think",
     ]
 
-    def __init__(self, api_key=None):
+    def __init__(self, api_key: Optional[str] = None) -> None:
         self.client = genai.Client(api_key=api_key or os.getenv("GOOGLE_API_KEY"))
         try:
             # Get models from API
-            api_models = []
+            api_models: List[str] = []
             for m in self.client.models.list():
                 if (
                     hasattr(m, "supported_actions")
@@ -1599,12 +1714,12 @@ class GeminiProvider(AIProvider):
 
     def call_ai(
         self,
-        messages,
-        temperature,
-        max_tokens,
-        model="gemini/gemini-2.0-flash-exp",
-        **kwargs,
-    ):
+        messages: List[Dict[str, Any]],
+        temperature: float,
+        max_tokens: int,
+        model: str = "gemini/gemini-2.0-flash-exp",
+        **kwargs: Any,
+    ) -> str:
         try:
             # Handle different model name formats
             if "/" in model:
@@ -1729,12 +1844,12 @@ class GeminiProvider(AIProvider):
 
     async def call_ai_async(
         self,
-        messages,
-        temperature,
-        max_tokens,
-        model="gemini/gemini-2.0-flash-exp",
-        **kwargs,
-    ):
+        messages: List[Dict[str, Any]],
+        temperature: float,
+        max_tokens: int,
+        model: str = "gemini/gemini-2.0-flash-exp",
+        **kwargs: Any,
+    ) -> str:
         try:
             if "/" in model:
                 model_parts = model.split("/")
@@ -1856,7 +1971,7 @@ class GeminiProvider(AIProvider):
         except Exception as e:
             raise e
 
-    def process_video(self, video_path):
+    def process_video(self, video_path: Union[str, Path]) -> Any:
         """
         Public method to process and upload video files to Gemini.
 
@@ -1878,18 +1993,18 @@ class GeminiProvider(AIProvider):
 
         return video_file
 
-    def _process_video(self, video_path):
+    def _process_video(self, video_path: Union[str, Path]) -> Any:
         # Keep the old private method for backward compatibility
         return self.process_video(video_path)
 
     def generate(
         self,
-        messages,
-        temperature,
-        max_tokens,
-        model="gemini/gemini-2.0-flash-exp-image-generation",
-        **kwargs,
-    ):
+        messages: List[Dict[str, Any]],
+        temperature: float,
+        max_tokens: int,
+        model: str = "gemini/gemini-2.0-flash-exp-image-generation",
+        **kwargs: Any,
+    ) -> Dict[str, Any]:
         try:
             # Extract system message if present
             system_instruction = next(
@@ -1994,21 +2109,21 @@ class GeminiProvider(AIProvider):
 
     async def generate_async(
         self,
-        messages,
-        temperature,
-        max_tokens,
-        model="gemini/gemini-2.0-flash-exp-image-generation",
-        **kwargs,
-    ):
+        messages: List[Dict[str, Any]],
+        temperature: float,
+        max_tokens: int,
+        model: str = "gemini/gemini-2.0-flash-exp-image-generation",
+        **kwargs: Any,
+    ) -> Dict[str, Any]:
         # For simplicity, we'll use the synchronous version for now
         # In a real-world scenario, you might want to use an async implementation
         return self.generate(messages, temperature, max_tokens, model, **kwargs)
 
 
 class DeepSeekProvider(AIProvider):
-    supported_models = ["deepseek-chat", "deepseek-reasoner"]
+    supported_models: List[str] = ["deepseek-chat", "deepseek-reasoner"]
 
-    def __init__(self, api_key=None):
+    def __init__(self, api_key: Optional[str] = None) -> None:
         self.sync_client = OpenAI(
             api_key=api_key or os.getenv("DEEPSEEK_API_KEY"),
             base_url="https://api.deepseek.com",
@@ -2018,17 +2133,34 @@ class DeepSeekProvider(AIProvider):
             base_url="https://api.deepseek.com",
         )
 
-    def generate(self, messages, temperature, max_tokens, model=None, **kwargs):
+    def generate(
+        self,
+        messages: List[Dict[str, Any]],
+        temperature: float,
+        max_tokens: int,
+        model: Optional[str] = None,
+        **kwargs: Any,
+    ) -> str:
         raise NotImplementedError("This provider does not support image generation")
 
     async def generate_async(
-        self, messages, temperature, max_tokens, model=None, **kwargs
-    ):
+        self,
+        messages: List[Dict[str, Any]],
+        temperature: float,
+        max_tokens: int,
+        model: Optional[str] = None,
+        **kwargs: Any,
+    ) -> str:
         raise NotImplementedError("This provider does not support image generation")
 
     def call_ai(
-        self, messages, temperature, max_tokens, model="deepseek-chat", **kwargs
-    ):
+        self,
+        messages: List[Dict[str, Any]],
+        temperature: float,
+        max_tokens: int,
+        model: str = "deepseek-chat",
+        **kwargs: Any,
+    ) -> str:
         try:
             response = self.sync_client.chat.completions.create(
                 model=model,
@@ -2042,8 +2174,13 @@ class DeepSeekProvider(AIProvider):
             raise e
 
     async def call_ai_async(
-        self, messages, temperature, max_tokens, model="deepseek-chat", **kwargs
-    ):
+        self,
+        messages: List[Dict[str, Any]],
+        temperature: float,
+        max_tokens: int,
+        model: str = "deepseek-chat",
+        **kwargs: Any,
+    ) -> str:
         try:
             response = await self.async_client.chat.completions.create(
                 model=model,
@@ -2154,17 +2291,17 @@ class BedrockProvider(AIProvider):
 
     def __init__(
         self,
-        region_name="us-east-1",
-        aws_access_key_id=None,
-        aws_secret_access_key=None,
-    ):
+        region_name: str = "us-east-1",
+        aws_access_key_id: Optional[str] = None,
+        aws_secret_access_key: Optional[str] = None,
+    ) -> None:
         if not BEDROCK_AVAILABLE:
             raise ImportError(
                 "boto3 is required for BedrockProvider. Install with: pip install boto3"
             )
 
         # Set up AWS credentials and region
-        kwargs = {"region_name": region_name}
+        kwargs: Dict[str, Any] = {"region_name": region_name}
         if aws_access_key_id:
             kwargs["aws_access_key_id"] = aws_access_key_id
         if aws_secret_access_key:
@@ -2177,9 +2314,9 @@ class BedrockProvider(AIProvider):
                 kwargs["aws_secret_access_key"] = os.getenv("AWS_SECRET_ACCESS_KEY")
 
         self.bedrock_runtime = boto3.client("bedrock-runtime", **kwargs)
-        self.region_name = region_name
+        self.region_name: str = region_name
 
-    def _extract_model_from_arn(self, arn):
+    def _extract_model_from_arn(self, arn: str) -> str:
         """Extract the model identifier from an ARN"""
         if not arn.startswith("arn:aws:bedrock:"):
             return arn
@@ -2190,7 +2327,7 @@ class BedrockProvider(AIProvider):
             return parts[-1]  # Get the model-id part
         return arn
 
-    def _get_model_family(self, model_id):
+    def _get_model_family(self, model_id: str) -> str:
         """Determine the model family from the model ID"""
         # Handle ARN format
         if model_id.startswith("arn:aws:bedrock:"):
@@ -2222,17 +2359,23 @@ class BedrockProvider(AIProvider):
         else:
             return "unknown"
 
-    def _is_inference_profile(self, model_id):
+    def _is_inference_profile(self, model_id: str) -> bool:
         """Check if the model ID is an inference profile"""
         return (
             model_id.startswith(("apac.", "us.", "eu."))
             or "arn:aws:bedrock" in model_id
         )
 
-    def _prepare_anthropic_request(self, messages, max_tokens, temperature, **kwargs):
+    def _prepare_anthropic_request(
+        self,
+        messages: List[Dict[str, Any]],
+        max_tokens: int,
+        temperature: float,
+        **kwargs: Any,
+    ) -> Dict[str, Any]:
         """Prepare request for Anthropic Claude models using Messages API"""
         system_content = ""
-        user_messages = []
+        user_messages: List[Dict[str, Any]] = []
 
         for message in messages:
             if message["role"] == "system":
@@ -2306,7 +2449,13 @@ class BedrockProvider(AIProvider):
 
         return request_body
 
-    def _prepare_titan_request(self, messages, max_tokens, temperature, **kwargs):
+    def _prepare_titan_request(
+        self,
+        messages: List[Dict[str, Any]],
+        max_tokens: int,
+        temperature: float,
+        **kwargs: Any,
+    ) -> Dict[str, Any]:
         """Prepare request for Amazon Titan models"""
         # Combine all messages into a single prompt for Titan
         prompt = ""
@@ -2321,7 +2470,7 @@ class BedrockProvider(AIProvider):
                 content = " ".join(text_parts)
             prompt += f"{role}: {content}\n"
 
-        request_body = {
+        request_body: Dict[str, Any] = {
             "inputText": prompt,
             "textGenerationConfig": {
                 "maxTokenCount": max_tokens,
@@ -2332,7 +2481,13 @@ class BedrockProvider(AIProvider):
         }
         return request_body
 
-    def _prepare_llama_request(self, messages, max_tokens, temperature, **kwargs):
+    def _prepare_llama_request(
+        self,
+        messages: List[Dict[str, Any]],
+        max_tokens: int,
+        temperature: float,
+        **kwargs: Any,
+    ) -> Dict[str, Any]:
         """Prepare request for Meta Llama models"""
         # Format prompt for Llama
         prompt = ""
@@ -2356,7 +2511,7 @@ class BedrockProvider(AIProvider):
 
         prompt += "<|start_header_id|>assistant<|end_header_id|>\n"
 
-        request_body = {
+        request_body: Dict[str, Any] = {
             "prompt": prompt,
             "max_gen_len": max_tokens,
             "temperature": temperature,
@@ -2364,11 +2519,17 @@ class BedrockProvider(AIProvider):
         }
         return request_body
 
-    def _prepare_cohere_request(self, messages, max_tokens, temperature, **kwargs):
+    def _prepare_cohere_request(
+        self,
+        messages: List[Dict[str, Any]],
+        max_tokens: int,
+        temperature: float,
+        **kwargs: Any,
+    ) -> Dict[str, Any]:
         """Prepare request for Cohere models"""
         # Extract the last user message as the prompt
         prompt = ""
-        chat_history = []
+        chat_history: List[Dict[str, str]] = []
 
         for i, message in enumerate(messages):
             content = message["content"]
@@ -2388,7 +2549,7 @@ class BedrockProvider(AIProvider):
                     }
                 )
 
-        request_body = {
+        request_body: Dict[str, Any] = {
             "message": prompt,
             "max_tokens": max_tokens,
             "temperature": temperature,
@@ -2398,7 +2559,13 @@ class BedrockProvider(AIProvider):
         }
         return request_body
 
-    def _prepare_generic_request(self, messages, max_tokens, temperature, **kwargs):
+    def _prepare_generic_request(
+        self,
+        messages: List[Dict[str, Any]],
+        max_tokens: int,
+        temperature: float,
+        **kwargs: Any,
+    ) -> Dict[str, Any]:
         """Generic request preparation for other model families"""
         # Simple prompt-based approach
         prompt = ""
@@ -2414,7 +2581,7 @@ class BedrockProvider(AIProvider):
 
         prompt += "Assistant:"
 
-        request_body = {
+        request_body: Dict[str, Any] = {
             "prompt": prompt,
             "max_tokens": max_tokens,
             "temperature": temperature,
@@ -2424,12 +2591,12 @@ class BedrockProvider(AIProvider):
 
     def call_ai(
         self,
-        messages,
-        temperature,
-        max_tokens,
-        model="bedrock/anthropic.claude-3-5-sonnet-20240620-v1:0",
-        **kwargs,
-    ):
+        messages: List[Dict[str, Any]],
+        temperature: float,
+        max_tokens: int,
+        model: str = "bedrock/anthropic.claude-3-5-sonnet-20240620-v1:0",
+        **kwargs: Any,
+    ) -> str:
         try:
             # Extract model ID from prefixed format
             model_id = model.replace("bedrock/", "")
@@ -2494,17 +2661,24 @@ class BedrockProvider(AIProvider):
 
     async def call_ai_async(
         self,
-        messages,
-        temperature,
-        max_tokens,
-        model="bedrock/anthropic.claude-3-5-sonnet-20240620-v1:0",
-        **kwargs,
-    ):
+        messages: List[Dict[str, Any]],
+        temperature: float,
+        max_tokens: int,
+        model: str = "bedrock/anthropic.claude-3-5-sonnet-20240620-v1:0",
+        **kwargs: Any,
+    ) -> str:
         # AWS Bedrock doesn't have native async support in boto3, so we'll use the sync version
         # In a production environment, you might want to use asyncio.run_in_executor
         return self.call_ai(messages, temperature, max_tokens, model, **kwargs)
 
-    def generate(self, messages, temperature, max_tokens, model=None, **kwargs):
+    def generate(
+        self,
+        messages: List[Dict[str, Any]],
+        temperature: float,
+        max_tokens: int,
+        model: Optional[str] = None,
+        **kwargs: Any,
+    ) -> str:
         # Check if model supports image generation
         if model and any(
             x in model for x in ["nova-canvas", "titan-image", "stable-diffusion"]
@@ -2517,19 +2691,24 @@ class BedrockProvider(AIProvider):
             raise NotImplementedError("This provider does not support image generation")
 
     async def generate_async(
-        self, messages, temperature, max_tokens, model=None, **kwargs
-    ):
+        self,
+        messages: List[Dict[str, Any]],
+        temperature: float,
+        max_tokens: int,
+        model: Optional[str] = None,
+        **kwargs: Any,
+    ) -> str:
         return self.generate(messages, temperature, max_tokens, model, **kwargs)
 
 
 class AIManager:
-    def __init__(self):
-        self.providers = {}
+    def __init__(self) -> None:
+        self.providers: Dict[str, AIProvider] = {}
 
-    def add_provider(self, provider):
+    def add_provider(self, provider: AIProvider) -> None:
         self.providers[provider.__class__.__name__] = provider
 
-    def get_provider(self, model):
+    def get_provider(self, model: str) -> AIProvider:
         for provider in self.providers.values():
             if model in provider.supported_models:
                 return provider
@@ -2551,7 +2730,14 @@ class AIManager:
 
         raise ValueError(f"No provider found for model: {model}")
 
-    def call_ai(self, messages, temperature, max_tokens, model, **kwargs):
+    def call_ai(
+        self,
+        messages: List[Dict[str, Any]],
+        temperature: float,
+        max_tokens: int,
+        model: str,
+        **kwargs: Any,
+    ) -> Tuple[str, float]:
         provider = self.get_provider(model)
         if provider:
             """
@@ -2590,7 +2776,14 @@ class AIManager:
             raise ValueError(f"No provider found for model: {model}")
 
     # TODO shouldn't be 0 when no model...
-    async def call_ai_async(self, messages, temperature, max_tokens, model, **kwargs):
+    async def call_ai_async(
+        self,
+        messages: List[Dict[str, Any]],
+        temperature: float,
+        max_tokens: int,
+        model: str,
+        **kwargs: Any,
+    ) -> Tuple[str, float]:
         provider = self.get_provider(model)
         if provider:
             """
@@ -2627,7 +2820,14 @@ class AIManager:
         else:
             raise ValueError(f"No provider found for model: {model}")
 
-    def generate(self, messages, temperature, max_tokens, model, **kwargs):
+    def generate(
+        self,
+        messages: List[Dict[str, Any]],
+        temperature: float,
+        max_tokens: int,
+        model: str,
+        **kwargs: Any,
+    ) -> Tuple[Any, float]:
         provider = self.get_provider(model)
         if provider:
             try:
@@ -2646,7 +2846,14 @@ class AIManager:
         else:
             raise ValueError(f"No provider found for model: {model}")
 
-    async def generate_async(self, messages, temperature, max_tokens, model, **kwargs):
+    async def generate_async(
+        self,
+        messages: List[Dict[str, Any]],
+        temperature: float,
+        max_tokens: int,
+        model: str,
+        **kwargs: Any,
+    ) -> Tuple[Any, float]:
         provider = self.get_provider(model)
         if provider:
             try:
@@ -2800,8 +3007,8 @@ async def generate_async_with_retry(
 
 
 class AIManagerSingleton:
-    _instance = None
-    _lock = threading.Lock()
+    _instance: ClassVar[Optional[AIManager]] = None
+    _lock: ClassVar[threading.Lock] = threading.Lock()
 
     @classmethod
     def get_instance(cls):
@@ -2895,7 +3102,7 @@ def call_ai(
     messages: List[Message],
     temperature: float = 0.1,
     max_tokens: int = 4096,
-    **kwargs: Dict[str, Any],
+    **kwargs: Any,
 ) -> Tuple[str, float]:
     ai_manager = AIManagerSingleton.get_instance()
     return call_ai_with_retry(
@@ -2903,15 +3110,15 @@ def call_ai(
     )
 
 
-def call_ai_async(
+async def call_ai_async(
     model: str,
     messages: List[Message],
     temperature: float = 0.1,
     max_tokens: int = 4096,
-    **kwargs: Dict[str, Any],
+    **kwargs: Any,
 ) -> Tuple[str, float]:
     ai_manager = AIManagerSingleton.get_instance()
-    return call_ai_async_with_retry(
+    return await call_ai_async_with_retry(
         ai_manager, messages, temperature, max_tokens, model, **kwargs
     )
 
@@ -2921,7 +3128,7 @@ def generate(
     messages: List[Message],
     temperature: float = 0.1,
     max_tokens: int = 4096,
-    **kwargs: Dict[str, Any],
+    **kwargs: Any,
 ) -> Tuple[str, float]:
     ai_manager = AIManagerSingleton.get_instance()
     return generate_with_retry(
@@ -2934,9 +3141,9 @@ async def generate_async(
     messages: List[Message],
     temperature: float = 0.1,
     max_tokens: int = 4096,
-    **kwargs: Dict[str, Any],
+    **kwargs: Any,
 ) -> Tuple[str, float]:
     ai_manager = AIManagerSingleton.get_instance()
-    return generate_async_with_retry(
+    return await generate_async_with_retry(
         ai_manager, messages, temperature, max_tokens, model, **kwargs
     )
