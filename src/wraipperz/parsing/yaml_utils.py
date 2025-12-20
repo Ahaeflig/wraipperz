@@ -5,8 +5,8 @@ from typing import Any, Dict, Type, Union, get_args, get_origin
 from pydantic import BaseModel
 
 
-def find_yaml(text):
-    def get_indentation(line):
+def find_yaml(text: str) -> str:
+    def get_indentation(line: str) -> int:
         return len(line) - len(line.lstrip())
 
     lines = text.split("\n")
